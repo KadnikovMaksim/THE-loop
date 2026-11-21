@@ -2,7 +2,7 @@
   "type": "FeatureCollection",
   "generator": "overpass-turbo",
   "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL.",
-  "timestamp": "2026-11-21T12:43:15Z",
+  "timestamp": "2026-11-21T13:33:05Z",
   "features": [
     {
       "type": "Feature",
@@ -288,32 +288,6 @@
     },
     {
       "type": "Feature",
-      "id": "relation/4250468",
-      "properties": {
-        "@id": "relation/4250468",
-        "addr:housenumber": "24",
-        "addr:postcode": "410028",
-        "addr:street": "Рабочая улица",
-        "building": "civic",
-        "building:levels": "5",
-        "contact:website": "http://снцран.рф/",
-        "name": "Саратовский научный центр РАН",
-        "source": "bing",
-        "type": "multipolygon",
-        "wikidata": "Q4408467",
-        "wikipedia": "ru:Саратовский научный центр РАН",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0212669,
-          51.5255506
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "relation/4589000",
       "properties": {
         "@id": "relation/4589000",
@@ -475,31 +449,6 @@
         "coordinates": [
           46.0580336,
           51.5301726
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "relation/5282025",
-      "properties": {
-        "@id": "relation/5282025",
-        "addr:housenumber": "32",
-        "addr:street": "проспект Строителей",
-        "amenity": "cinema",
-        "building": "yes",
-        "cinema:3D": "yes",
-        "contact:phone": "+7 8452 628383",
-        "contact:website": "http://www.kinosaratov.ru",
-        "name": "Саратов",
-        "name:ja": "サラトフ",
-        "type": "multipolygon",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9693508,
-          51.59784
         ]
       }
     },
@@ -752,27 +701,6 @@
     },
     {
       "type": "Feature",
-      "id": "relation/10436512",
-      "properties": {
-        "@id": "relation/10436512",
-        "addr:housenumber": "85",
-        "addr:street": "улица Мичурина",
-        "amenity": "courthouse",
-        "landuse": "commercial",
-        "name": "Саратовский областной суд",
-        "type": "multipolygon",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0280981,
-          51.5262038
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "relation/10669583",
       "properties": {
         "@id": "relation/10669583",
@@ -923,24 +851,6 @@
         "coordinates": [
           46.0153617,
           51.516635
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "relation/10994833",
-      "properties": {
-        "@id": "relation/10994833",
-        "amenity": "courthouse",
-        "landuse": "commercial",
-        "type": "multipolygon",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0387438,
-          51.5232253
         ]
       }
     },
@@ -2080,25 +1990,6 @@
     },
     {
       "type": "Feature",
-      "id": "relation/14760226",
-      "properties": {
-        "@id": "relation/14760226",
-        "amenity": "townhall",
-        "name": "Администрация Заводского района",
-        "owner": "Администрация города Саратова",
-        "type": "site",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9575392,
-          51.5040629
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "relation/14760325",
       "properties": {
         "@id": "relation/14760325",
@@ -2167,28 +2058,6 @@
     },
     {
       "type": "Feature",
-      "id": "relation/14772972",
-      "properties": {
-        "@id": "relation/14772972",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "government": "administrative",
-        "name": "Администрация Кировского района",
-        "office": "government",
-        "owner": "Администрация города Саратова",
-        "type": "site",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0282141,
-          51.5336989
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "relation/14775475",
       "properties": {
         "@id": "relation/14775475",
@@ -2205,28 +2074,6 @@
         "coordinates": [
           45.9719331,
           51.5619865
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "relation/14781251",
-      "properties": {
-        "@id": "relation/14781251",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "government": "administrative",
-        "name": "Администрация Ленинского района",
-        "office": "government",
-        "owner": "Администрация города Саратова",
-        "type": "site",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9774261,
-          51.5852319
         ]
       }
     },
@@ -3073,28 +2920,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/86971546",
-      "properties": {
-        "@id": "way/86971546",
-        "addr:housenumber": "62/66",
-        "addr:street": "Железнодорожная улица",
-        "amenity": "courthouse",
-        "building": "yes",
-        "building:levels": "3",
-        "name": "Кировский районный суд г.Саратова",
-        "source": "artem;bing",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0063557,
-          51.5348346
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/86972240",
       "properties": {
         "@id": "way/86972240",
@@ -3165,45 +2990,6 @@
         "coordinates": [
           46.000451,
           51.5169075
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/87605802",
-      "properties": {
-        "@id": "way/87605802",
-        "addr:housenumber": "86",
-        "addr:street": "улица Мичурина",
-        "building": "civic",
-        "source": "bing",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.024794,
-          51.5262648
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/87605803",
-      "properties": {
-        "@id": "way/87605803",
-        "addr:housenumber": "20",
-        "addr:street": "Рабочая улица",
-        "building": "civic",
-        "building:levels": "4",
-        "source": "artem;bing",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0231596,
-          51.5252134
         ]
       }
     },
@@ -3302,33 +3088,6 @@
         "coordinates": [
           46.0345904,
           51.527131
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/88591083",
-      "properties": {
-        "@id": "way/88591083",
-        "addr:city": "Саратов",
-        "addr:housenumber": "11",
-        "addr:postcode": "410600",
-        "addr:street": "проспект Столыпина",
-        "amenity": "cinema",
-        "building": "yes",
-        "cinema:3D": "yes",
-        "contact:phone": "+7 8452 277256",
-        "contact:website": "http://pioner-kino.ru/",
-        "level": "2",
-        "name": "Пионер",
-        "wheelchair": "no",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0316354,
-          51.5302076
         ]
       }
     },
@@ -3512,24 +3271,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/92416736",
-      "properties": {
-        "@id": "way/92416736",
-        "amenity": "townhall",
-        "building": "yes",
-        "name": "Администрация п. Тепличный",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.8791754,
-          51.4807112
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/92836665",
       "properties": {
         "@id": "way/92836665",
@@ -3694,25 +3435,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/102774566",
-      "properties": {
-        "@id": "way/102774566",
-        "addr:housenumber": "57",
-        "addr:street": "улица Сакко и Ванцетти",
-        "building": "civic",
-        "building:levels": "10",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0220358,
-          51.530664
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/102785605",
       "properties": {
         "@id": "way/102785605",
@@ -3768,27 +3490,6 @@
         "coordinates": [
           46.0260343,
           51.5427653
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/103293671",
-      "properties": {
-        "@id": "way/103293671",
-        "addr:housenumber": "193Б",
-        "addr:street": "Огородная улица",
-        "amenity": "courthouse",
-        "building": "yes",
-        "name": "Мировые судьи Заводского р-на",
-        "source": "artem;bing",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9218584,
-          51.5029973
         ]
       }
     },
@@ -4130,58 +3831,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/106079185",
-      "properties": {
-        "@id": "way/106079185",
-        "addr:housenumber": "1",
-        "addr:street": "Международная улица",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "building": "yes",
-        "building:levels": "5",
-        "government": "administrative",
-        "name": "Администрация Ленинского района",
-        "office": "government",
-        "official_name": "Администрация Ленинского района муниципального образования «Город Саратов»",
-        "operator": "Администрация Ленинского района муниципального образования «Город Саратов»",
-        "owner": "Администрация муниципального образования «Город Саратов»",
-        "ownership": "municipal",
-        "source:geometry": "bing",
-        "source:geometry:date": "2012-06-06",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9685202,
-          51.5808044
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/106079348",
-      "properties": {
-        "@id": "way/106079348",
-        "addr:housenumber": "9",
-        "addr:street": "улица Ломоносова",
-        "building": "civic",
-        "building:levels": "2",
-        "roof:shape": "hipped",
-        "source:geometry": "bing",
-        "source:geometry:date": "2012-06-06",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9625748,
-          51.5990294
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/106442297",
       "properties": {
         "@id": "way/106442297",
@@ -4235,26 +3884,6 @@
         "coordinates": [
           46.1272347,
           51.4988549
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/107696352",
-      "properties": {
-        "@id": "way/107696352",
-        "addr:housenumber": "15",
-        "addr:street": "площадь Свободы",
-        "amenity": "townhall",
-        "building": "yes",
-        "name": "Дворец творчества  детей и молодежи",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.1252999,
-          51.4974226
         ]
       }
     },
@@ -4315,28 +3944,6 @@
         "coordinates": [
           46.1220536,
           51.4969039
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/108783882",
-      "properties": {
-        "@id": "way/108783882",
-        "addr:housenumber": "13",
-        "addr:street": "улица Пушкина",
-        "amenity": "courthouse",
-        "building": "yes",
-        "fixme": "исправить название",
-        "loc_name": "Городской Суд",
-        "name": "Энгельсский районный суд",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.1305423,
-          51.5006445
         ]
       }
     },
@@ -8165,22 +7772,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/359744079",
-      "properties": {
-        "@id": "way/359744079",
-        "amenity": "courthouse",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0062853,
-          51.5348585
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/359863100",
       "properties": {
         "@id": "way/359863100",
@@ -9843,26 +9434,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/668206093",
-      "properties": {
-        "@id": "way/668206093",
-        "addr:housenumber": "7А",
-        "addr:postcode": "410086",
-        "addr:street": "улица Благодарова",
-        "amenity": "courthouse",
-        "name": "Суд Ленинского района",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9100198,
-          51.598943
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/669652175",
       "properties": {
         "@id": "way/669652175",
@@ -10057,22 +9628,6 @@
         "coordinates": [
           46.0367083,
           51.5292628
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/683563690",
-      "properties": {
-        "@id": "way/683563690",
-        "building": "civic",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0369165,
-          51.5289982
         ]
       }
     },
@@ -10320,23 +9875,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/711970097",
-      "properties": {
-        "@id": "way/711970097",
-        "amenity": "townhall",
-        "landuse": "commercial",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.031365,
-          51.5359571
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "way/715073645",
       "properties": {
         "@id": "way/715073645",
@@ -10488,22 +10026,6 @@
         "coordinates": [
           46.0123555,
           51.520582
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "way/773144426",
-      "properties": {
-        "@id": "way/773144426",
-        "amenity": "courthouse",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9218611,
-          51.5029998
         ]
       }
     },
@@ -11097,22 +10619,6 @@
         "coordinates": [
           46.1436316,
           51.4492845
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/846541164",
-      "properties": {
-        "@id": "node/846541164",
-        "amenity": "townhall",
-        "name": "УФСБ"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0237026,
-          51.5317876
         ]
       }
     },
@@ -17558,25 +17064,6 @@
     },
     {
       "type": "Feature",
-      "id": "way/1234998213",
-      "properties": {
-        "@id": "way/1234998213",
-        "amenity": "cinema",
-        "building": "yes",
-        "building:levels": "1",
-        "name": "Летний кинотеатр",
-        "@geometry": "center"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.016041,
-          51.5161423
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/1241680626",
       "properties": {
         "@id": "node/1241680626",
@@ -17674,24 +17161,6 @@
         "coordinates": [
           46.1252738,
           51.5005166
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/1295704024",
-      "properties": {
-        "@id": "node/1295704024",
-        "amenity": "townhall",
-        "name": "Фонд Социального Страхования, филиал № 6",
-        "note": "По-моему, либо amenity, либо office тут лишний...",
-        "office": "insurance"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.1216739,
-          51.4770696
         ]
       }
     },
@@ -21588,90 +21057,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/3424255166",
-      "properties": {
-        "@id": "node/3424255166",
-        "amenity": "cinema",
-        "cinema:3D": "no",
-        "contact:phone": "+7 8452 237338",
-        "contact:website": "http://www.domkinosar.ru/",
-        "name": "Дом кино",
-        "opening_hours": "Mo-Su 16:30-21:00"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0466199,
-          51.5321836
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3424255167",
-      "properties": {
-        "@id": "node/3424255167",
-        "amenity": "cinema",
-        "contact:phone": "+7 8452 499229",
-        "contact:website": "http://www.premiere-film.ru",
-        "name": "Премьер фильм"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0707217,
-          51.5728074
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3424255168",
-      "properties": {
-        "@id": "node/3424255168",
-        "amenity": "cinema",
-        "booking:phone": "+7 8452 477077",
-        "cinema:3D": "yes",
-        "contact:email": "feedback@cinema-5.ru",
-        "contact:phone": "+7 905 1828383",
-        "contact:website": "https://cinema5.ru",
-        "description": "2й этаж",
-        "fixme": "уточнить график работы",
-        "name": "Синема 5",
-        "opening_hours": "Mo-Fr 10:00-01:00, Sa-Su 10:00-02:00"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9203733,
-          51.4944402
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3424255169",
-      "properties": {
-        "@id": "node/3424255169",
-        "amenity": "cinema",
-        "booking:phone": "+7 8452 309280",
-        "cinema:3D": "yes",
-        "cinema:IMAX": "yes",
-        "contact:website": "http://www.cinemapark.ru/multiplexes/show/18",
-        "name": "Синема парк",
-        "opening_hours": "Mo-Su 00:00-02:00,10:00-24:00",
-        "start_date": "2010-12-15"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0147313,
-          51.5413668
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/3425302592",
       "properties": {
         "@id": "node/3425302592",
@@ -21777,24 +21162,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/3450561111",
-      "properties": {
-        "@id": "node/3450561111",
-        "addr:postcode": "410002",
-        "amenity": "courthouse",
-        "contact:website": "http://volzhsky.sar.sudrf.ru/",
-        "name": "Волжский районный суд"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0398987,
-          51.527205
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/3487261340",
       "properties": {
         "@id": "node/3487261340",
@@ -21837,23 +21204,6 @@
         "coordinates": [
           45.9710894,
           51.5977964
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3541612805",
-      "properties": {
-        "@id": "node/3541612805",
-        "amenity": "courthouse",
-        "contact:website": "http://saratovgvs.sar.sudrf.ru/",
-        "name": "Саратовский гарнизонный военный суд"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9654703,
-          51.5822846
         ]
       }
     },
@@ -22152,43 +21502,6 @@
         "coordinates": [
           46.0150646,
           51.5334494
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3793716194",
-      "properties": {
-        "@id": "node/3793716194",
-        "amenity": "courthouse",
-        "contact:website": "http://saratov-ats.ru/",
-        "fixme": "уточнить местоположение",
-        "name": "Арбитражный Третейский суд Саратовской области"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0195864,
-          51.5274418
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/3811038932",
-      "properties": {
-        "@id": "node/3811038932",
-        "amenity": "cinema",
-        "cinema:3D": "yes",
-        "contact:phone": "+7 8452 338481",
-        "contact:website": "http://pobedafilm.ru/",
-        "name": "Победа"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0175996,
-          51.5320523
         ]
       }
     },
@@ -23431,26 +22744,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/6224321332",
-      "properties": {
-        "@id": "node/6224321332",
-        "amenity": "cinema",
-        "contact:email": "feedback@cinema-5.ru",
-        "contact:phone": "+7 905 1828383",
-        "contact:website": "https://cinema5.ru",
-        "name": "Синема 5",
-        "opening_hours": "Mo-Fr 11:00-01:00, Sa-Su 10:00-01:30"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.1263976,
-          51.4882123
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/6271076299",
       "properties": {
         "@id": "node/6271076299",
@@ -24260,62 +23553,6 @@
         "coordinates": [
           45.9506057,
           51.5053827
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/10142658103",
-      "properties": {
-        "@id": "node/10142658103",
-        "admin_level": "8",
-        "amenity": "townhall",
-        "government": "administrative",
-        "name": "Администрация города Саратова",
-        "office": "government",
-        "official_name": "Адмнистрация муниципального образования «город Саратов»"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0370252,
-          51.532143
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/10148640003",
-      "properties": {
-        "@id": "node/10148640003",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "email": "zavodrs@yandex.ru",
-        "fax": "+7 845 2964587",
-        "government": "administrative",
-        "name": "Администрация Заводского района",
-        "office": "government",
-        "owner": "Администрация города Саратова",
-        "phone": "+7 845 2960770",
-        "website": "http://admzavod.ru/",
-        "@relations": [
-          {
-            "role": "",
-            "rel": 14760226,
-            "reltags": {
-              "amenity": "townhall",
-              "name": "Администрация Заводского района",
-              "owner": "Администрация города Саратова",
-              "type": "site"
-            }
-          }
-        ]
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9467956,
-          51.5043768
         ]
       }
     },
@@ -25157,29 +24394,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/10156534094",
-      "properties": {
-        "@id": "node/10156534094",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "email": "okt.orgotdel@yandex.ru",
-        "fax": "+7 845 2233390",
-        "government": "administrative",
-        "name": "Администрация Октябрьского района",
-        "office": "government",
-        "owner": "Администрация города Саратова",
-        "phone": "+7 845 2392900"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.025788,
-          51.5273849
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/10156534095",
       "properties": {
         "@id": "node/10156534095",
@@ -25239,29 +24453,6 @@
         "coordinates": [
           45.9915483,
           51.5601942
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/10156848707",
-      "properties": {
-        "@id": "node/10156848707",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "email": "frunzecom1@mail.ru",
-        "fax": "+7 845 2670120",
-        "government": "administrative",
-        "name": "Администрация Фрунзенского района",
-        "office": "government",
-        "phone": "+7 845 2670300; +7 845 2659876",
-        "website": "http://www.sarfrunze.ru"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0270768,
-          51.5305579
         ]
       }
     },
@@ -25559,26 +24750,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/10158961220",
-      "properties": {
-        "@id": "node/10158961220",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "government": "administrative",
-        "name": "Администрация Волжского района",
-        "office": "government",
-        "owner": "Администрация города Саратова"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0366657,
-          51.5266565
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/10159011399",
       "properties": {
         "@id": "node/10159011399",
@@ -25779,41 +24950,6 @@
         "coordinates": [
           46.063233,
           51.5698747
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/10159790363",
-      "properties": {
-        "@id": "node/10159790363",
-        "admin_level": "9",
-        "amenity": "townhall",
-        "government": "administrative",
-        "name": "Администрация Кировского района",
-        "office": "government",
-        "owner": "Администрация города Саратова",
-        "@relations": [
-          {
-            "role": "",
-            "rel": 14772972,
-            "reltags": {
-              "admin_level": "9",
-              "amenity": "townhall",
-              "government": "administrative",
-              "name": "Администрация Кировского района",
-              "office": "government",
-              "owner": "Администрация города Саратова",
-              "type": "site"
-            }
-          }
-        ]
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0282141,
-          51.5336989
         ]
       }
     },
@@ -28285,23 +27421,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/13142579602",
-      "properties": {
-        "@id": "node/13142579602",
-        "amenity": "courthouse",
-        "check_date": "2025-09-12",
-        "name": "Первый кассационный суд первой юрисдикции"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0396668,
-          51.5326362
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/13142579616",
       "properties": {
         "@id": "node/13142579616",
@@ -28762,24 +27881,6 @@
     },
     {
       "type": "Feature",
-      "id": "node/13142579804",
-      "properties": {
-        "@id": "node/13142579804",
-        "amenity": "courthouse",
-        "check_date": "2025-09-11",
-        "name": "Энгельсский районый суд",
-        "opening_hours": "Mo-Th 09:00-13:00,13:45-18:00; Fr 09:00-13:00,13:45-16:45"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.118565,
-          51.5006915
-        ]
-      }
-    },
-    {
-      "type": "Feature",
       "id": "node/13142579807",
       "properties": {
         "@id": "node/13142579807",
@@ -29166,39 +28267,6 @@
         "coordinates": [
           45.9475801,
           51.5703175
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/13283559436",
-      "properties": {
-        "@id": "node/13283559436",
-        "amenity": "townhall",
-        "full_name": "Департамент Гагаринского административного района муниципального образования город Саратов",
-        "name": "Департамент Гагаринского района"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          46.0000008,
-          51.5543725
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/13283559437",
-      "properties": {
-        "@id": "node/13283559437",
-        "amenity": "townhall",
-        "name": "Отдел ЗАГС по Гагаринскому административному району"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9999834,
-          51.5545139
         ]
       }
     },
@@ -29742,26 +28810,6 @@
         "coordinates": [
           46.0454954,
           51.6301079
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "id": "node/14100934191",
-      "properties": {
-        "@id": "node/14100934191",
-        "amenity": "cinema",
-        "brand": "Синема Парк",
-        "level": "3",
-        "name": "Синема Парк",
-        "opening_hours": "Mo,Tu,We,Su 10:00-02:00; Th-Sa 10.00-03.30",
-        "website": "https://kinoteatr.ru/"
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          45.9720833,
-          51.5756231
         ]
       }
     },

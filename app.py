@@ -86,6 +86,7 @@ def build_interesting_route_stops(
     - учитывает приоритетные категории;
     - вставляет каждую выбранную точку в позицию с минимальным приростом длины пути.
     """
+    max_stops = max(0, min(100, int(max_stops)))
     if max_stops <= 0 or not places:
         return []
 
@@ -586,7 +587,7 @@ def build_route():
     data = request.get_json(silent=True) or {}
     pad = float(data.get("pad", 0.015))
     max_detour_km = float(data.get("max_detour_km", 0.8))
-    max_stops = int(data.get("max_stops", 3))
+    max_stops = max(1, min(100, int(data.get("max_stops", 3))))
     selected_categories, filter_set = _parse_categories_param(data)
     priority_categories = data.get("priority_categories") or selected_categories
 
