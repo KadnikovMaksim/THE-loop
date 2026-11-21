@@ -2,11 +2,11 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Точки A и B, прямоугольник и места на карте</title>
+  <title>Интересный маршрут между A и B</title>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     body { margin: 0; font-family: Arial, sans-serif; display: flex; height: 100vh; }
-    #panel { width: 340px; padding: 14px; background: #f5f6f8; border-right: 1px solid #ddd; overflow-y: auto; }
+    #panel { width: 350px; padding: 14px; background: #f5f6f8; border-right: 1px solid #ddd; overflow-y: auto; }
     #map { flex: 1; }
     button {
       width: 100%; padding: 9px; margin-top: 8px;
@@ -14,6 +14,8 @@
       border-radius: 5px; cursor: pointer; font-size: 14px;
     }
     button:hover { background: #1d4ed8; }
+    button.route-btn { background: #059669; }
+    button.route-btn:hover { background: #047857; }
     .box {
       background: #fff; padding: 10px; margin-top: 10px;
       border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px;
@@ -21,26 +23,24 @@
     .slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
     input[type="range"] { width: 100%; cursor: pointer; }
     .info { font-size: 13px; color: #334155; margin-top: 8px; }
-    .cats { font-size: 12px; color: #475569; line-height: 1.45; }
-    .place-item {
-      background: #fff; padding: 7px 9px; margin-top: 6px;
-      border-radius: 5px; border: 1px solid #e2e8f0; font-size: 13px; cursor: pointer;
+    .stop-item {
+      background: #ecfdf5; padding: 7px 9px; margin-top: 6px;
+      border-radius: 5px; border: 1px solid #a7f3d0; font-size: 13px;
     }
-    .place-item:hover { border-color: #2563eb; }
   </style>
 </head>
 <body>
   <div id="panel">
-    <h3 style="margin-top: 0;">Поиск мест между А и Б</h3>
+    <h3 style="margin-top: 0;">Маршрут через достопримечательности</h3>
     <p style="font-size: 13px; color: #475569; margin: 0 0 8px;">
       1. Кликни по карте — <b>Точка A</b>.<br>
       2. Кликни ещё раз — <b>Точка B</b>.<br>
-      3. Ползунком уменьши или увеличь отступ прямоугольника (BBox).
+      3. Настрой BBox и лимит лишнего пути («крюка»).
     </p>
 
     <div class="box">
       <div class="slider-row">
-        <label for="padSlider"><b>Отступ BBox (уменьшение/расширение):</b></label>
+        <label for="padSlider"><b>Отступ BBox:</b></label>
         <span id="padValue">0.020</span>
       </div>
       <input
@@ -52,26 +52,42 @@
         value="0.020"
         oninput="onPadChange()"
       />
-      <div style="display:flex; justify-content:space-between; font-size:11px; color:#64748b;">
-        <span>Уже (0.001)</span>
-        <span>Шире (0.050)</span>
+
+      <div class="slider-row" style="margin-top: 10px;">
+        <label for="detourSlider"><b>Макс. «крюк» (км):</b></label>
+        <span id="detourValue">1.5</span>
       </div>
+      <input
+        id="detourSlider"
+        type="range"
+        min="0.2"
+        max="5.0"
+        step="0.1"
+        value="1.5"
+        oninput="document.getElementById('detourValue').innerText = parseFloat(this.value).toFixed(1)"
+      />
+
+      <div class="slider-row" style="margin-top: 10px;">
+        <label for="stopsSlider"><b>Макс. остановок:</b></label>
+        <span id="stopsValue">3</span>
+      </div>
+      <input
+        id="stopsSlider"
+        type="range"
+        min="1"
+        max="6"
+        step="1"
+        value="3"
+        oninput="document.getElementById('stopsValue').innerText = this.value"
+      />
     </div>
 
-    <button onclick="searchInBbox()">Найти и показать места</button>
+    <button onclick="searchInBbox()">1. Найти места в прямоугольнике</button>
+    <button class="route-btn" onclick="buildInterestingRoute()">2. Построить маршрут через места</button>
+
     <div id="status" class="info"></div>
-
-    <div class="box cats">
-      <b>Категории из запроса Overpass:</b><br>
-      • Арт-объекты (<code>artwork</code>, <code>artwork_type</code>)<br>
-      • Туризм (<code>attraction</code>, <code>museum</code>, <code>viewpoint</code>, <code>gallery</code>)<br>
-      • Исторические места (<code>historic</code>)<br>
-      • Парки и сады (<code>park</code>, <code>garden</code>)<br>
-      • Городские и культурные (<code>fountain</code>, <code>theatre</code>, <code>arts_centre</code>, <code>library</code>, <code>planetarium</code>, <code>clock</code>)<br>
-      • Храмы и культовые места (<code>place_of_worship</code>, <code>church</code>, <code>cathedral</code>, <code>mosque</code>, <code>synagogue</code>, <code>chapel</code>)
-    </div>
-
-    <div id="places-list"></div>
+    <div id="route-summary" class="info"></div>
+    <div id="stops-list"></div>
   </div>
 
   <div id="map"></div>
@@ -89,6 +105,8 @@
     let markerB = null;
     let rectLayer = null;
     let placeMarkers = [];
+    let stopMarkers = [];
+    let routeLine = null;
 
     function getPad() {
       return parseFloat(document.getElementById("padSlider").value);
@@ -117,7 +135,7 @@
       rectLayer = L.rectangle(bounds, {
         color: "#2563eb",
         weight: 2,
-        fillOpacity: 0.08
+        fillOpacity: 0.06
       }).addTo(map);
 
       if (fitMap) {
@@ -125,10 +143,20 @@
       }
     }
 
+    function clearRouteLayers() {
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+      stopMarkers.forEach(m => map.removeLayer(m));
+      stopMarkers = [];
+      document.getElementById("route-summary").innerText = "";
+      document.getElementById("stops-list").innerHTML = "";
+    }
+
     function clearPlaceMarkers() {
       placeMarkers.forEach(m => map.removeLayer(m));
       placeMarkers = [];
-      document.getElementById("places-list").innerHTML = "";
     }
 
     function renderPoints(data) {
@@ -158,8 +186,6 @@
     function onPadChange() {
       const pad = getPad();
       document.getElementById("padValue").innerText = pad.toFixed(3);
-
-      // Сразу обновляем прямоугольник на карте при движении ползунка
       if (currentPointA && currentPointB) {
         drawRectangle(computePreviewBbox(currentPointA, currentPointB, pad), false);
       }
@@ -167,36 +193,53 @@
 
     function renderPlaces(places) {
       clearPlaceMarkers();
-      const listEl = document.getElementById("places-list");
-
-      listEl.innerHTML = (places || []).map((p, idx) => {
+      (places || []).forEach((p, idx) => {
         const dot = L.circleMarker([p.lat, p.lon], {
-          radius: 6,
+          radius: 5,
           color: "#dc2626",
           fillColor: "#f87171",
-          fillOpacity: 0.9
-        }).addTo(map).bindPopup(`<b>${idx + 1}. ${p.name}</b>`);
-
+          fillOpacity: 0.8
+        }).addTo(map).bindPopup(`Место: ${p.name}`);
         placeMarkers.push(dot);
+      });
+    }
+
+    function renderRoute(routeData) {
+      clearRouteLayers();
+      if (!routeData || !routeData.route) return;
+
+      routeLine = L.polyline(routeData.route.geometry, {
+        color: "#059669",
+        weight: 5
+      }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+
+      document.getElementById("route-summary").innerHTML =
+        `<b>Маршрут:</b> ~${routeData.route.distance_km} км · ~${routeData.route.duration_min} мин` +
+        (routeData.route.fallback ? " (запасная линия)" : "");
+
+      const stops = routeData.stops || [];
+      document.getElementById("stops-list").innerHTML = stops.map((s, idx) => {
+        const m = L.circleMarker([s.lat, s.lon], {
+          radius: 8,
+          color: "#047857",
+          fillColor: "#34d399",
+          fillOpacity: 0.95
+        }).addTo(map).bindPopup(`<b>Остановка ${idx + 1}: ${s.name}</b>`);
+        stopMarkers.push(m);
 
         return `
-          <div class="place-item" onclick="focusPlace(${p.lat}, ${p.lon}, ${idx})">
-            <b>${idx + 1}. ${p.name}</b><br>
-            <span style="color:#64748b;font-size:11px;">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</span>
+          <div class="stop-item">
+            <b>${idx + 1}. ${s.name}</b><br>
+            <span style="color:#065f46;font-size:11px;">${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</span>
           </div>
         `;
       }).join("");
     }
 
-    function focusPlace(lat, lon, idx) {
-      map.setView([lat, lon], 16);
-      if (placeMarkers[idx]) {
-        placeMarkers[idx].openPopup();
-      }
-    }
-
     map.on("click", async function (e) {
       clearPlaceMarkers();
+      clearRouteLayers();
       document.getElementById("status").innerText = "";
 
       const res = await fetch("/api/points", {
@@ -210,7 +253,8 @@
 
     async function searchInBbox() {
       const pad = getPad();
-      document.getElementById("status").innerText = `Ищем места (pad = ${pad.toFixed(3)})...`;
+      document.getElementById("status").innerText = "Ищем места в прямоугольнике...";
+      clearRouteLayers();
 
       const res = await fetch("/api/search-places", {
         method: "POST",
@@ -224,9 +268,37 @@
         return;
       }
 
-      document.getElementById("status").innerText = `Найдено мест: ${data.count} (pad: ${pad.toFixed(3)})`;
+      document.getElementById("status").innerText = `Найдено мест: ${data.count}`;
       drawRectangle(data.bbox, true);
       renderPlaces(data.places);
+    }
+
+    async function buildInterestingRoute() {
+      const pad = getPad();
+      const maxDetourKm = parseFloat(document.getElementById("detourSlider").value);
+      const maxStops = parseInt(document.getElementById("stopsSlider").value, 10);
+
+      document.getElementById("status").innerText = "Подбираем остановки и строим маршрут...";
+
+      const res = await fetch("/api/build-route", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pad: pad,
+          max_detour_km: maxDetourKm,
+          max_stops: maxStops
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        document.getElementById("status").innerText = data.error || "Ошибка построения маршрута";
+        return;
+      }
+
+      document.getElementById("status").innerText =
+        `Остановок в маршруте: ${(data.stops || []).length} (лимит крюка: ${maxDetourKm} км)`;
+      renderRoute(data);
     }
 
     fetch("/api/points")
@@ -235,6 +307,7 @@
         renderPoints(data);
         if (data.bbox) drawRectangle(data.bbox, false);
         if (data.places) renderPlaces(data.places);
+        if (data.route_result) renderRoute(data.route_result);
       });
   </script>
 </body>
