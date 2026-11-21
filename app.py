@@ -1,4 +1,6 @@
+import json
 import math
+from pathlib import Path
 import requests
 from flask import Flask, jsonify, render_template, request
 
@@ -10,6 +12,10 @@ point_b = None         # {"lat": float, "lon": float} | None
 current_bbox = None    # {"south": float, "west": float, "north": float, "east": float} | None
 found_places = []      # список словарей найденных мест
 last_route_data = None # последний построенный маршрут
+
+# Файл выгрузки GeoJSON из overpass-turbo по Саратову (положи рядом с app.py)
+SARATOV_GEOJSON_FILE = Path(__file__).parent / "saratov.geojson"
+_saratov_places_cache: list[dict] | None = None
 
 # --- НАСТРОЙКИ ВНЕШНИХ СЕРВИСОВ ---
 OVERPASS_URL = "https://api.overpass-turbo.eu/interpreter"
@@ -189,7 +195,7 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
     }
 
 
-# --- 2. КАТЕГОРИИ, BBOX И OVERPASS ---
+# --- 2. КАТЕГОРИИ, BBOX, OVERPASS И ЛОКАЛЬНЫЙ ФОЛБЭК ПО САРАТОВУ ---
 
 def detect_place_category(tags: dict) -> str:
     """Определяет категорию места по тегам OpenStreetMap."""
@@ -251,12 +257,144 @@ def build_bbox(pt_a: dict, pt_b: dict, pad: float = 0.015) -> dict:
     }
 
 
-def fetch_places_in_bbox(south: float, west: float, north: float, east: float) -> list[dict]:
-    """Отправляет расширенный запрос в Overpass по прямоугольнику и возвращает список мест."""
+def _extract_lat_lon_from_geometry(geometry: dict | None) -> tuple[float | None, float | None]:
+    """Извлекает (lat, lon) из GeoJSON geometry (Point, Polygon, MultiPolygon и др.)."""
+    if not geometry:
+        return None, None
+
+    geom_type = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if not coords:
+        return None, None
+
+    if geom_type == "Point" and len(coords) >= 2:
+        return float(coords[1]), float(coords[0])
+
+    points: list[tuple[float, float]] = []
+
+    def collect(node):
+        if isinstance(node, (list, tuple)):
+            if len(node) >= 2 and isinstance(node[0], (int, float)) and isinstance(node[1], (int, float)):
+                points.append((float(node[1]), float(node[0])))  # (lat, lon)
+            else:
+                for item in node:
+                    collect(item)
+
+    collect(coords)
+    if not points:
+        return None, None
+
+    return (
+        sum(p[0] for p in points) / len(points),
+        sum(p[1] for p in points) / len(points),
+    )
+
+
+def _get_saratov_places_from_geojson() -> list[dict]:
+    """Читает и кэширует в памяти объекты из saratov.geojson (или готового JSON-списка)."""
+    global _saratov_places_cache
+    if _saratov_places_cache is not None:
+        return _saratov_places_cache
+
+    if not SARATOV_GEOJSON_FILE.exists():
+        raise FileNotFoundError(
+            f"Файл {SARATOV_GEOJSON_FILE.name} не найден рядом с app.py. "
+            "Положите выгрузку overpass-turbo (GeoJSON) в папку проекта."
+        )
+
+    raw = json.loads(SARATOV_GEOJSON_FILE.read_text(encoding="utf-8"))
+    parsed: list[dict] = []
+
+    # Поддержка GeoJSON FeatureCollection (как в вашей выгрузке из overpass-turbo)
+    if isinstance(raw, dict) and "features" in raw:
+        for feat in raw.get("features", []):
+            props = feat.get("properties") or {}
+            tags = props.get("tags") if isinstance(props.get("tags"), dict) else props
+
+            name = (
+                tags.get("name")
+                or tags.get("name:ru")
+                or tags.get("name:en")
+                or props.get("name")
+            )
+            if not name:
+                continue
+
+            lat, lon = _extract_lat_lon_from_geometry(feat.get("geometry"))
+            if lat is None or lon is None:
+                continue
+
+            category = detect_place_category(tags)
+            place_id = props.get("@id") or feat.get("id") or tags.get("id")
+            parsed.append({
+                "id": place_id,
+                "name": name,
+                "category": category,
+                "category_label": CATEGORY_LABELS.get(category, category),
+                "lat": float(lat),
+                "lon": float(lon),
+            })
+
+    # Поддержка сырого JSON ответа Overpass (elements)
+    elif isinstance(raw, dict) and "elements" in raw:
+        for el in raw.get("elements", []):
+            tags = el.get("tags", {})
+            name = tags.get("name") or tags.get("name:ru") or tags.get("name:en")
+            if not name:
+                continue
+            lat = el.get("lat") if "lat" in el else el.get("center", {}).get("lat")
+            lon = el.get("lon") if "lon" in el else el.get("center", {}).get("lon")
+            if lat is None or lon is None:
+                continue
+            category = detect_place_category(tags)
+            parsed.append({
+                "id": el.get("id"),
+                "name": name,
+                "category": category,
+                "category_label": CATEGORY_LABELS.get(category, category),
+                "lat": float(lat),
+                "lon": float(lon),
+            })
+
+    # Поддержка уже сконвертированного списка объектов
+    elif isinstance(raw, list):
+        for p in raw:
+            if not p.get("name") or p.get("lat") is None or p.get("lon") is None:
+                continue
+            cat = p.get("category", "tourism_view")
+            parsed.append({
+                "id": p.get("id"),
+                "name": p["name"],
+                "category": cat,
+                "category_label": p.get("category_label") or CATEGORY_LABELS.get(cat, cat),
+                "lat": float(p["lat"]),
+                "lon": float(p["lon"]),
+            })
+
+    _saratov_places_cache = parsed
+    return parsed
+
+
+def load_saratov_fallback_in_bbox(south: float, west: float, north: float, east: float) -> list[dict]:
+    """Фильтрует локальные достопримечательности Саратова по текущему BBox."""
+    all_places = _get_saratov_places_from_geojson()
+    return [
+        p for p in all_places
+        if south <= p["lat"] <= north and west <= p["lon"] <= east
+    ]
+
+
+def fetch_places_in_bbox(
+    south: float, west: float, north: float, east: float
+) -> tuple[list[dict], str]:
+    """
+    Отправляет запрос в Overpass-turbo; если API недоступно —
+    переключается на локальный GeoJSON Саратова (saratov.geojson).
+    """
     box = f"{south},{west},{north},{east}"
 
     overpass_query = f"""
-    [out:json][timeout:60];
+    [out:json][timeout:100];
 
     (
       nwr["tourism"~"artwork|attraction|museum|viewpoint|gallery|theme_park|zoo|aquarium"]({box});
@@ -273,39 +411,49 @@ def fetch_places_in_bbox(south: float, west: float, north: float, east: float) -
     out center;
     """
 
-    response = requests.post(
-        OVERPASS_URL,
-        data={"data": overpass_query},
-        headers=OVERPASS_HEADERS,
-        timeout=65,
-    )
-    response.raise_for_status()
+    try:
+        response = requests.post(
+            OVERPASS_URL,
+            data={"data": overpass_query},
+            headers=OVERPASS_HEADERS,
+            timeout=100,
+        )
+        response.raise_for_status()
 
-    elements = response.json().get("elements", [])
-    places = []
+        raw_text = response.text.strip()
+        if not raw_text:
+            raise ValueError("Пустой ответ от Overpass-turbo")
 
-    for el in elements:
-        tags = el.get("tags", {})
-        name = tags.get("name") or tags.get("name:ru") or tags.get("name:en")
-        if not name:
-            continue
+        elements = response.json().get("elements", [])
+        places = []
 
-        lat = el.get("lat") if "lat" in el else el.get("center", {}).get("lat")
-        lon = el.get("lon") if "lon" in el else el.get("center", {}).get("lon")
-        if lat is None or lon is None:
-            continue
+        for el in elements:
+            tags = el.get("tags", {})
+            name = tags.get("name") or tags.get("name:ru") or tags.get("name:en")
+            if not name:
+                continue
 
-        category = detect_place_category(tags)
-        places.append({
-            "id": el.get("id"),
-            "name": name,
-            "category": category,
-            "category_label": CATEGORY_LABELS.get(category, category),
-            "lat": float(lat),
-            "lon": float(lon),
-        })
+            lat = el.get("lat") if "lat" in el else el.get("center", {}).get("lat")
+            lon = el.get("lon") if "lon" in el else el.get("center", {}).get("lon")
+            if lat is None or lon is None:
+                continue
 
-    return places
+            category = detect_place_category(tags)
+            places.append({
+                "id": el.get("id"),
+                "name": name,
+                "category": category,
+                "category_label": CATEGORY_LABELS.get(category, category),
+                "lat": float(lat),
+                "lon": float(lon),
+            })
+
+        return places, "overpass-turbo"
+
+    except Exception as turbo_err:
+        print(f"Overpass-turbo недоступен ({turbo_err}), переключаемся на saratov.geojson...")
+        places = load_saratov_fallback_in_bbox(south, west, north, east)
+        return places, "local_saratov_geojson"
 
 
 # --- 3. РОУТЫ FLASK ---
@@ -369,17 +517,18 @@ def search_places():
     current_bbox = build_bbox(point_a, point_b, pad=pad)
 
     try:
-        found_places = fetch_places_in_bbox(
+        found_places, source = fetch_places_in_bbox(
             current_bbox["south"],
             current_bbox["west"],
             current_bbox["north"],
             current_bbox["east"],
         )
     except Exception as e:
-        return jsonify({"error": f"Ошибка запроса к Overpass: {e}"}), 502
+        return jsonify({"error": f"Ошибка поиска мест: {e}"}), 502
 
     return jsonify({
         "bbox": current_bbox,
+        "source": source,
         "count": len(found_places),
         "places": found_places,
     })
@@ -398,17 +547,18 @@ def build_route():
     max_stops = int(data.get("max_stops", 3))
     priority_categories = data.get("priority_categories") or []
 
+    source = "cached_in_memory"
     if not found_places:
         current_bbox = build_bbox(point_a, point_b, pad=pad)
         try:
-            found_places = fetch_places_in_bbox(
+            found_places, source = fetch_places_in_bbox(
                 current_bbox["south"],
                 current_bbox["west"],
                 current_bbox["north"],
                 current_bbox["east"],
             )
         except Exception as e:
-            return jsonify({"error": f"Ошибка запроса к Overpass: {e}"}), 502
+            return jsonify({"error": f"Ошибка поиска мест: {e}"}), 502
 
     stops = build_interesting_route_stops(
         point_a=(point_a["lat"], point_a["lon"]),
@@ -429,6 +579,7 @@ def build_route():
     last_route_data = {
         "stops": stops,
         "route": route_geom,
+        "source": source,
         "max_detour_km": max_detour_km,
         "max_stops": max_stops,
     }

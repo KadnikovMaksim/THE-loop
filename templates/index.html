@@ -20,8 +20,17 @@
       background: #fff; padding: 10px; margin-top: 10px;
       border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px;
     }
+    .box-header { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+    .mini-btns { display: flex; gap: 6px; }
+    .mini-btn {
+      width: auto; margin-top: 0; padding: 3px 8px;
+      font-size: 11px; background: #e2e8f0; color: #1e293b; border-radius: 4px;
+    }
+    .mini-btn:hover { background: #cbd5e1; }
     .slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
     input[type="range"] { width: 100%; cursor: pointer; }
+    .cat-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    .cat-item { display: flex; align-items: center; gap: 7px; cursor: pointer; }
     .info { font-size: 13px; color: #334155; margin-top: 8px; }
     .stop-item {
       background: #ecfdf5; padding: 7px 9px; margin-top: 6px;
@@ -35,8 +44,26 @@
     <p style="font-size: 13px; color: #475569; margin: 0 0 8px;">
       1. Кликни по карте — <b>Точка A</b>.<br>
       2. Кликни ещё раз — <b>Точка B</b>.<br>
-      3. Настрой BBox и лимит лишнего пути («крюка»).
+      3. Выбери категории, BBox и лимит лишнего пути («крюка»).
     </p>
+
+    <div class="box">
+      <div class="box-header">
+        <b>Категории:</b>
+        <div class="mini-btns">
+          <button type="button" class="mini-btn" onclick="setAllCategories(true)">Все</button>
+          <button type="button" class="mini-btn" onclick="setAllCategories(false)">Сброс</button>
+        </div>
+      </div>
+      <div class="cat-list">
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="attraction" checked /> Достопримечательности и виды</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="art" checked /> Арт-объекты и галереи</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="culture" checked /> Музеи и театры</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="historic" checked /> История и памятники</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="nature" checked /> Парки и сады</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="worship" checked /> Храмы и соборы</label>
+      </div>
+    </div>
 
     <div class="box">
       <div class="slider-row">
@@ -99,6 +126,14 @@
       attribution: "&copy; OpenStreetMap"
     }).addTo(map);
 
+    function invertMapColors(enabled = true) {
+      const tilePane = map.getPane("tilePane");
+      if (tilePane) {
+        tilePane.style.filter = enabled ? "invert(100%) hue-rotate(180deg)" : "none";
+      }
+    }
+    invertMapColors(true);
+
     let currentPointA = null;
     let currentPointB = null;
     let markerA = null;
@@ -107,6 +142,16 @@
     let placeMarkers = [];
     let stopMarkers = [];
     let routeLine = null;
+
+    function getSelectedCategories() {
+      return Array.from(document.querySelectorAll(".cat-cb:checked")).map(cb => cb.value);
+    }
+
+    function setAllCategories(checked) {
+      document.querySelectorAll(".cat-cb").forEach(cb => {
+        cb.checked = checked;
+      });
+    }
 
     function getPad() {
       return parseFloat(document.getElementById("padSlider").value);
@@ -193,7 +238,7 @@
 
     function renderPlaces(places) {
       clearPlaceMarkers();
-      (places || []).forEach((p, idx) => {
+      (places || []).forEach((p) => {
         const dot = L.circleMarker([p.lat, p.lon], {
           radius: 5,
           color: "#dc2626",
@@ -253,13 +298,14 @@
 
     async function searchInBbox() {
       const pad = getPad();
+      const categories = getSelectedCategories();
       document.getElementById("status").innerText = "Ищем места в прямоугольнике...";
       clearRouteLayers();
 
       const res = await fetch("/api/search-places", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pad: pad })
+        body: JSON.stringify({ pad: pad, categories: categories })
       });
       const data = await res.json();
 
@@ -277,6 +323,7 @@
       const pad = getPad();
       const maxDetourKm = parseFloat(document.getElementById("detourSlider").value);
       const maxStops = parseInt(document.getElementById("stopsSlider").value, 10);
+      const categories = getSelectedCategories();
 
       document.getElementById("status").innerText = "Подбираем остановки и строим маршрут...";
 
@@ -286,7 +333,8 @@
         body: JSON.stringify({
           pad: pad,
           max_detour_km: maxDetourKm,
-          max_stops: maxStops
+          max_stops: maxStops,
+          categories: categories
         })
       });
       const data = await res.json();
