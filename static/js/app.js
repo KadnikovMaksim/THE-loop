@@ -128,7 +128,7 @@
   let userLayer = null;
   let userMarker = null;
   let userAccuracy = null;
-  const placeImageCache = new Map();
+  const placeInfoCache = new Map();
 
   const nav = {
     active: false,
@@ -1489,15 +1489,29 @@
     );
   }
 
-  function popupPlace(place, image) {
+  function popupDescriptionHtml(info) {
+    if (!info || !info.description) return "";
+    const source = info.description_url
+      ? `<a href="${esc(info.description_url)}" target="_blank" rel="noopener">${esc(
+          info.description_source || "Источник"
+        )}</a>`
+      : esc(info.description_source || "");
+    return (
+      `<div class="popup-description">${esc(info.description)}</div>` +
+      (source ? `<div class="popup-credit">Описание: ${source}</div>` : "")
+    );
+  }
+
+  function popupPlace(place, info) {
     const meta = CATEGORY_META[place.category] || CATEGORY_META.tourism_view;
     const cat = CATEGORY_META[place.category] ? place.category : "tourism_view";
     return (
       `<div class="popup">` +
-      popupImageHtml(image) +
+      popupImageHtml(info && info.image) +
       `<div class="popup-cat" data-cat="${esc(cat)}"><span class="popup-dot"></span>` +
       `${esc(place.category_label || meta.label)}</div>` +
       `<b>${esc(place.name || "Место")}</b>` +
+      popupDescriptionHtml(info) +
       `</div>`
     );
   }
@@ -1528,13 +1542,13 @@
       });
       marker.bindPopup(popupPlace(place, null));
 
-      let imageApplied = false;
+      let infoApplied = false;
       marker.on("popupopen", async () => {
-        if (imageApplied) return;
-        const image = await fetchPlaceImage(place);
-        if (image && marker.isPopupOpen()) {
-          marker.setPopupContent(popupPlace(place, image));
-          imageApplied = true;
+        if (infoApplied) return;
+        const info = await fetchPlaceInfo(place);
+        if (info && (info.image || info.description) && marker.isPopupOpen()) {
+          marker.setPopupContent(popupPlace(place, info));
+          infoApplied = true;
         }
       });
 
@@ -1564,14 +1578,15 @@
     photoNote.hidden = true;
   }
 
-  function stopPopup(stop, index, image) {
+  function stopPopup(stop, index, info) {
     const cat = CATEGORY_META[stop.category] ? stop.category : "tourism_view";
     return (
       `<div class="popup">` +
-      popupImageHtml(image) +
+      popupImageHtml(info && info.image) +
       `<div class="popup-cat" data-cat="${esc(cat)}"><span class="popup-dot"></span>` +
       `Остановка ${index + 1}${stop.category_label ? ` · ${esc(stop.category_label)}` : ""}</div>` +
       `<b>${esc(stop.name || "Место")}</b>` +
+      popupDescriptionHtml(info) +
       `</div>`
     );
   }
@@ -1635,41 +1650,57 @@
     });
 
     updateResultUI(data);
-    hydrateStopImages(stops, imageToken);
+    hydrateStopInfo(stops, imageToken);
   }
 
-  function updateStopThumb(index, image) {
-    if (!image || !image.url) return;
-    const thumb = stopsList.querySelector(`[data-thumb="${index}"]`);
-    if (!thumb) return;
+  function updateStopInfo(index, info) {
+    if (!info) return;
 
-    const img = document.createElement("img");
-    img.src = image.url;
-    img.alt = "";
-    img.loading = "lazy";
-    img.decoding = "async";
-    img.referrerPolicy = "no-referrer";
-    img.addEventListener("load", () => thumb.classList.add("has-image"));
-    img.addEventListener("error", () => {
-      img.remove();
-      thumb.classList.remove("has-image");
-      const credit = stopsList.querySelector(`[data-credit="${index}"]`);
-      if (credit) credit.hidden = true;
-    });
-    thumb.prepend(img);
-
-    const credit = stopsList.querySelector(`[data-credit="${index}"]`);
-    if (credit) {
-      const parts = [image.artist, image.license].filter(Boolean);
-      credit.textContent = parts.length ? `Фото: ${parts.join(" · ")}` : "Фото: Wikimedia Commons";
-      credit.title = parts.join(" · ");
-      credit.hidden = false;
+    const description = stopsList.querySelector(`[data-desc="${index}"]`);
+    if (description && info.description) {
+      description.textContent = info.description;
+      description.title = info.description;
+      description.hidden = false;
     }
-    photoNote.hidden = false;
+
+    const image = info.image;
+    if (image && image.url) {
+      const thumb = stopsList.querySelector(`[data-thumb="${index}"]`);
+      if (thumb) {
+        const img = document.createElement("img");
+        img.src = image.url;
+        img.alt = "";
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.referrerPolicy = "no-referrer";
+        img.addEventListener("load", () => thumb.classList.add("has-image"));
+        img.addEventListener("error", () => {
+          img.remove();
+          thumb.classList.remove("has-image");
+          const credit = stopsList.querySelector(`[data-credit="${index}"]`);
+          if (credit) credit.hidden = true;
+        });
+        thumb.prepend(img);
+
+        const credit = stopsList.querySelector(`[data-credit="${index}"]`);
+        if (credit) {
+          const parts = [image.artist, image.license].filter(Boolean);
+          credit.textContent = parts.length
+            ? `Фото: ${parts.join(" · ")}`
+            : `Фото: ${image.source || "Wikimedia Commons"}`;
+          credit.title = parts.join(" · ");
+          credit.hidden = false;
+        }
+      }
+    }
+
+    if ((image && image.url) || info.description) {
+      photoNote.hidden = false;
+    }
   }
 
-  async function hydrateStopImages(stops, token) {
-    const max = Math.min(stops.length, 12);
+  async function hydrateStopInfo(stops, token) {
+    const max = Math.min(stops.length, 8);
     let cursor = 0;
 
     async function worker() {
@@ -1677,11 +1708,13 @@
         const index = cursor++;
         if (token !== routeImageToken) return;
         const stop = stops[index];
-        const image = await fetchPlaceImage(stop);
-        if (!image || token !== routeImageToken) continue;
-        updateStopThumb(index, image);
-        const marker = stopMarkers[index];
-        if (marker) marker.setPopupContent(stopPopup(stop, index, image));
+        const info = await fetchPlaceInfo(stop);
+        if (!info || token !== routeImageToken) continue;
+        updateStopInfo(index, info);
+        if (info.image || info.description) {
+          const marker = stopMarkers[index];
+          if (marker) marker.setPopupContent(stopPopup(stop, index, info));
+        }
       }
     }
 
@@ -1717,6 +1750,7 @@
             `</span>` +
             `<span class="stop-info"><span class="stop-name">${name}</span>` +
             `<span class="stop-meta">${meta}</span>` +
+            `<span class="stop-desc" data-desc="${index}" hidden></span>` +
             `<span class="stop-credit" data-credit="${index}" hidden></span></span>` +
             `<span class="stop-go" aria-hidden="true">` +
             `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
@@ -1954,17 +1988,22 @@
     }
   }
 
-  async function fetchPlaceImage(place) {
+  async function fetchPlaceInfo(place) {
     if (!place) return null;
     const lat = Number(place.lat);
     const lon = Number(place.lon);
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
     const key = `${lat.toFixed(4)},${lon.toFixed(4)},${String(place.name || "").toLowerCase()}`;
-    if (placeImageCache.has(key)) return placeImageCache.get(key);
+    const cached = placeInfoCache.get(key);
+    if (cached) {
+      const ttl = cached.info ? 24 * 60 * 60 * 1000 : 2 * 60 * 1000;
+      if (Date.now() - cached.ts < ttl) return cached.info;
+      placeInfoCache.delete(key);
+    }
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20000);
+    const timer = setTimeout(() => controller.abort(), 30000);
     const params = new URLSearchParams({
       name: place.name || "",
       lat: String(lat),
@@ -1972,17 +2011,22 @@
     });
 
     try {
-      const response = await fetch(`/api/place-image?${params.toString()}`, {
+      const response = await fetch(`/api/place-info?${params.toString()}`, {
         credentials: "same-origin",
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error("image request failed");
+      if (!response.ok) throw new Error("place info request failed");
       const data = await response.json();
-      const image = data && data.image ? data.image : null;
-      placeImageCache.set(key, image);
-      return image;
+      const info = {
+        image: data && data.image ? data.image : null,
+        description: (data && data.description) || "",
+        description_source: (data && data.description_source) || "",
+        description_url: (data && data.description_url) || "",
+      };
+      placeInfoCache.set(key, { ts: Date.now(), info });
+      return info;
     } catch (_error) {
-      placeImageCache.set(key, null);
+      placeInfoCache.set(key, { ts: Date.now(), info: null });
       return null;
     } finally {
       clearTimeout(timer);

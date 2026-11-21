@@ -131,12 +131,15 @@ ROUTE_MAX_WAYPOINTS = 25
 # --- ФОТОГРАФИИ ДОСТОПРИМЕЧАТЕЛЬНОСТЕЙ ---
 # Wikimedia Commons / Wikipedia не требуют ключа и отдают свободные лицензии.
 WIKIMEDIA_TIMEOUT = float(os.getenv("WIKIMEDIA_TIMEOUT", "6"))
+WIKIMEDIA_MIN_INTERVAL = float(os.getenv("WIKIMEDIA_MIN_INTERVAL", "1.0"))
 WIKIMEDIA_USER_AGENT = f"{APP_NAME}/2.0 (local walking-route demo)"
 IMAGE_CACHE_TTL = 24 * 60 * 60
-IMAGE_NEGATIVE_TTL = 60 * 60
+IMAGE_NEGATIVE_TTL = 5 * 60
 IMAGE_CACHE_MAX = 400
 _image_cache_lock = threading.Lock()
 _image_cache: dict[tuple, dict] = {}
+_wikimedia_lock = threading.Lock()
+_wikimedia_next_at = 0.0
 _IMAGE_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
 _PAGE_HOSTS = {"commons.wikimedia.org", "ru.wikipedia.org", "en.wikipedia.org"}
 _BAD_IMAGE_WORDS = (
@@ -1160,6 +1163,7 @@ def fetch_places_in_bbox(
 
 def _strip_html(value) -> str:
     text = html_lib.unescape(str(value or ""))
+    text = text.replace("\u0301", "")
     text = re.sub(r"<[^>]+>", " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -1184,17 +1188,44 @@ def _optional_coordinate(value, minimum: float, maximum: float) -> float | None:
 
 
 def _wikimedia_api(host: str, params: dict) -> dict:
-    response = requests.get(
-        f"https://{host}/w/api.php",
-        params={**params, "format": "json", "formatversion": "2"},
-        headers={
-            "User-Agent": WIKIMEDIA_USER_AGENT,
-            "Accept": "application/json",
-        },
-        timeout=(3.5, WIKIMEDIA_TIMEOUT),
-    )
-    response.raise_for_status()
-    data = response.json()
+    """Один запрос к API Wikimedia с мягким ограничением частоты и повтором на 429."""
+    global _wikimedia_next_at
+
+    url = f"https://{host}/w/api.php"
+    request_params = {**params, "format": "json", "formatversion": "2"}
+    headers = {
+        "User-Agent": WIKIMEDIA_USER_AGENT,
+        "Accept": "application/json",
+    }
+
+    with _wikimedia_lock:
+        delay = _wikimedia_next_at - time.monotonic()
+        if delay > 0:
+            time.sleep(min(delay, 2.0))
+        try:
+            response = requests.get(
+                url,
+                params=request_params,
+                headers=headers,
+                timeout=(3.5, WIKIMEDIA_TIMEOUT),
+            )
+            if response.status_code == 429:
+                try:
+                    retry_after = float(response.headers.get("Retry-After", "2.5"))
+                except (TypeError, ValueError):
+                    retry_after = 2.5
+                time.sleep(min(5.0, max(1.0, retry_after)))
+                response = requests.get(
+                    url,
+                    params=request_params,
+                    headers=headers,
+                    timeout=(3.5, WIKIMEDIA_TIMEOUT),
+                )
+            response.raise_for_status()
+            data = response.json()
+        finally:
+            _wikimedia_next_at = time.monotonic() + WIKIMEDIA_MIN_INTERVAL
+
     return data if isinstance(data, dict) else {}
 
 
@@ -1244,6 +1275,7 @@ def _image_from_commons_page(page: dict) -> dict | None:
         "source": "Wikimedia Commons",
         "artist": meta("Artist")[:140],
         "license": meta("LicenseShortName")[:80],
+        "description": meta("ImageDescription")[:500],
     }
 
 
@@ -1268,7 +1300,7 @@ def _commons_geosearch(lat: float, lon: float) -> dict | None:
             "prop": "imageinfo",
             "iiprop": "url|mime|size|extmetadata",
             "iiurlwidth": "480",
-            "iiextmetadatafilter": "Artist|LicenseShortName",
+            "iiextmetadatafilter": "Artist|LicenseShortName|ImageDescription",
         },
     )
     pages = _pages_from_response(data)
@@ -1298,7 +1330,7 @@ def _commons_name_search(name: str) -> dict | None:
             "prop": "imageinfo",
             "iiprop": "url|mime|size|extmetadata",
             "iiurlwidth": "480",
-            "iiextmetadatafilter": "Artist|LicenseShortName",
+            "iiextmetadatafilter": "Artist|LicenseShortName|ImageDescription",
         },
     )
     for page in _pages_from_response(data):
@@ -1308,7 +1340,91 @@ def _commons_name_search(name: str) -> dict | None:
     return None
 
 
-def _wikipedia_search(name: str) -> dict | None:
+def _wiki_tokens(name: str) -> list[str]:
+    return [token for token in re.split(r"[^\w]+", name.casefold()) if len(token) >= 3]
+
+
+def _page_coordinates(page: dict) -> tuple[float, float] | None:
+    coords = page.get("coordinates")
+    if isinstance(coords, list) and coords and isinstance(coords[0], dict):
+        try:
+            return float(coords[0]["lat"]), float(coords[0]["lon"])
+        except (KeyError, TypeError, ValueError):
+            return None
+    return None
+
+
+def _wiki_page_relevant(
+    page: dict,
+    name: str,
+    lat: float | None,
+    lon: float | None,
+) -> bool:
+    props = page.get("pageprops")
+    if isinstance(props, dict) and "disambiguation" in props:
+        return False
+
+    title = str(page.get("title") or "")
+    title_lower = title.casefold()
+    tokens = _wiki_tokens(name)
+    if tokens:
+        matches = sum(1 for token in tokens if token in title_lower)
+        required = 1 if len(tokens) <= 2 else max(2, math.ceil(len(tokens) * 0.5))
+        if matches < required:
+            return False
+
+    page_coords = _page_coordinates(page)
+    if page_coords and lat is not None and lon is not None:
+        distance = haversine_km(lat, lon, page_coords[0], page_coords[1])
+        if distance > 50:
+            return False
+    elif not page_coords and len(tokens) <= 2:
+        # Для коротких общих названий («Парк Победы») без координат
+        # легко поймать статью о другом городе.
+        return False
+
+    return True
+
+
+def _wiki_page_result(page: dict) -> dict | None:
+    title = str(page.get("title") or "")
+    page_url = page.get("fullurl")
+    if not _is_safe_https_url(page_url, _PAGE_HOSTS):
+        page_url = None
+
+    image = None
+    thumbnail = page.get("thumbnail") if isinstance(page.get("thumbnail"), dict) else {}
+    image_url = thumbnail.get("source")
+    if _is_safe_https_url(image_url, _IMAGE_HOSTS):
+        image = {
+            "url": image_url,
+            "page_url": page_url,
+            "title": title[:200],
+            "source": "Wikipedia",
+            "artist": "",
+            "license": "",
+            "description": "",
+        }
+
+    description = _strip_html(page.get("extract") or "")[:700]
+    if not image and not description:
+        return None
+
+    return {
+        "image": image,
+        "description": description,
+        "page_url": page_url,
+        "title": title[:200],
+        "source": "Wikipedia",
+    }
+
+
+def _wikipedia_search(
+    name: str,
+    lat: float | None = None,
+    lon: float | None = None,
+) -> dict | None:
+    """Ищет статью Википедии по названию: фото и короткое описание."""
     if len(name.strip()) < 4:
         return None
 
@@ -1319,43 +1435,79 @@ def _wikipedia_search(name: str) -> dict | None:
             "generator": "search",
             "gsrsearch": name,
             "gsrnamespace": "0",
-            "gsrlimit": "3",
-            "prop": "pageimages|info|pageprops",
+            "gsrlimit": "5",
+            "prop": "pageimages|info|pageprops|extracts|coordinates",
             "piprop": "thumbnail|name",
             "pithumbsize": "480",
             "pilicense": "free",
             "inprop": "url",
             "redirects": "1",
+            "exintro": "1",
+            "explaintext": "1",
+            "exsentences": "3",
+            "exlimit": "5",
+            "coprop": "type|name",
+            "colimit": "1",
         },
     )
 
-    tokens = [token for token in re.split(r"[^\w]+", name.casefold()) if len(token) >= 3]
     for page in _pages_from_response(data):
-        props = page.get("pageprops")
-        if isinstance(props, dict) and "disambiguation" in props:
+        if not _wiki_page_relevant(page, name, lat, lon):
             continue
+        result = _wiki_page_result(page)
+        if result:
+            return result
+    return None
 
+
+def _wikipedia_geosearch(
+    name: str,
+    lat: float,
+    lon: float,
+) -> dict | None:
+    """Ищет статьи Википедии рядом с координатами — защита от тёзок."""
+    data = _wikimedia_api(
+        "ru.wikipedia.org",
+        {
+            "action": "query",
+            "generator": "geosearch",
+            "ggscoord": f"{lat}|{lon}",
+            "ggsradius": "1500",
+            "ggslimit": "30",
+            "ggsnamespace": "0",
+            "prop": "pageimages|info|pageprops|extracts|coordinates",
+            "piprop": "thumbnail|name",
+            "pithumbsize": "480",
+            "pilicense": "free",
+            "inprop": "url",
+            "exintro": "1",
+            "explaintext": "1",
+            "exsentences": "3",
+            "exlimit": "20",
+            "coprop": "type|name",
+            "colimit": "1",
+        },
+    )
+
+    pages = _pages_from_response(data)
+    pages.sort(
+        key=lambda page: page.get("dist")
+        if isinstance(page.get("dist"), (int, float))
+        else 1e9
+    )
+    tokens = _wiki_tokens(name)
+    if not tokens:
+        return None
+
+    for page in pages:
         title = str(page.get("title") or "")
-        if tokens and not any(token in title.casefold() for token in tokens):
+        if not any(token in title.casefold() for token in tokens):
             continue
-
-        thumbnail = page.get("thumbnail") if isinstance(page.get("thumbnail"), dict) else {}
-        image_url = thumbnail.get("source")
-        if not _is_safe_https_url(image_url, _IMAGE_HOSTS):
+        if not _wiki_page_relevant(page, name, lat, lon):
             continue
-
-        page_url = page.get("fullurl")
-        if not _is_safe_https_url(page_url, _PAGE_HOSTS):
-            page_url = None
-
-        return {
-            "url": image_url,
-            "page_url": page_url,
-            "title": title[:200],
-            "source": "Wikipedia",
-            "artist": "",
-            "license": "",
-        }
+        result = _wiki_page_result(page)
+        if result:
+            return result
     return None
 
 
@@ -1364,53 +1516,82 @@ def _image_cache_get(key: tuple) -> tuple[bool, dict | None]:
         entry = _image_cache.get(key)
         if not entry:
             return False, None
-        ttl = IMAGE_CACHE_TTL if entry["image"] else IMAGE_NEGATIVE_TTL
+        info = entry["info"]
+        has_content = bool(info and (info.get("image") or info.get("description")))
+        ttl = IMAGE_CACHE_TTL if has_content else IMAGE_NEGATIVE_TTL
         if time.monotonic() - entry["ts"] > ttl:
             _image_cache.pop(key, None)
             return False, None
-        return True, entry["image"]
+        return True, info
 
 
-def _image_cache_put(key: tuple, image: dict | None) -> None:
+def _image_cache_put(key: tuple, info: dict | None) -> None:
     with _image_cache_lock:
         if len(_image_cache) >= IMAGE_CACHE_MAX:
             oldest = min(_image_cache.items(), key=lambda item: item[1]["ts"])[0]
             _image_cache.pop(oldest, None)
-        _image_cache[key] = {"ts": time.monotonic(), "image": image}
+        _image_cache[key] = {"ts": time.monotonic(), "info": info}
 
 
-def get_place_image(name: str, lat: float | None, lon: float | None) -> dict | None:
+def get_place_info(name: str, lat: float | None, lon: float | None) -> dict | None:
+    """Возвращает фото и краткое описание объекта из Wikimedia / Википедии."""
     name = (name or "").strip()[:300]
     key = (
         round(lat, 4) if lat is not None else None,
         round(lon, 4) if lon is not None else None,
         name.casefold(),
     )
-    cached, image = _image_cache_get(key)
+    cached, info = _image_cache_get(key)
     if cached:
-        return image
+        return info
 
-    result = None
-    if lat is not None and lon is not None:
+    wiki = None
+    if name and lat is not None and lon is not None:
         try:
-            result = _commons_geosearch(lat, lon)
+            wiki = _wikipedia_geosearch(name, lat, lon)
         except Exception as exc:
-            print(f"Wikimedia geosearch error: {exc}")
-
-    if not result and name:
+            print(f"Wikipedia geosearch error: {exc}")
+    if not wiki and name and len(_wiki_tokens(name)) >= 3:
         try:
-            result = _wikipedia_search(name)
+            wiki = _wikipedia_search(name, lat, lon)
         except Exception as exc:
-            print(f"Wikipedia image error: {exc}")
+            print(f"Wikipedia info error: {exc}")
 
-    if not result and name:
-        try:
-            result = _commons_name_search(name)
-        except Exception as exc:
-            print(f"Wikimedia search error: {exc}")
+    image = wiki.get("image") if wiki else None
+    description = (wiki.get("description") if wiki else "") or ""
+    description_source = "Wikipedia" if description else None
+    description_url = (wiki.get("page_url") if wiki else None) if description else None
 
-    _image_cache_put(key, result)
-    return result
+    if not image:
+        commons = None
+        if lat is not None and lon is not None:
+            try:
+                commons = _commons_geosearch(lat, lon)
+            except Exception as exc:
+                print(f"Wikimedia geosearch error: {exc}")
+        if not commons and name and len(_wiki_tokens(name)) >= 3:
+            try:
+                commons = _commons_name_search(name)
+            except Exception as exc:
+                print(f"Wikimedia search error: {exc}")
+
+        if commons:
+            image = commons
+
+    info = {
+        "image": image,
+        "description": description or None,
+        "description_source": description_source,
+        "description_url": description_url,
+        "title": (wiki or {}).get("title") or (image or {}).get("title"),
+    }
+    _image_cache_put(key, info)
+    return info
+
+
+def get_place_image(name: str, lat: float | None, lon: float | None) -> dict | None:
+    info = get_place_info(name, lat, lon)
+    return info.get("image") if info else None
 
 
 # --- 3. РОУТЫ FLASK ---
@@ -1628,6 +1809,42 @@ def place_image():
         image = None
 
     return jsonify({"image": image})
+
+
+@app.route("/api/place-info", methods=["GET"])
+def place_info():
+    name = (request.args.get("name") or "").strip()[:300]
+    lat = _optional_coordinate(request.args.get("lat"), -90, 90)
+    lon = _optional_coordinate(request.args.get("lon"), -180, 180)
+
+    if lat is None or lon is None:
+        lat = lon = None
+    if not name and lat is None:
+        return jsonify(
+            {
+                "image": None,
+                "description": None,
+                "description_source": None,
+                "description_url": None,
+                "title": None,
+            }
+        )
+
+    try:
+        info = get_place_info(name, lat, lon) or {}
+    except Exception as exc:
+        app.logger.warning("Не удалось получить описание места: %s", exc)
+        info = {}
+
+    return jsonify(
+        {
+            "image": info.get("image"),
+            "description": info.get("description"),
+            "description_source": info.get("description_source"),
+            "description_url": info.get("description_url"),
+            "title": info.get("title"),
+        }
+    )
 
 
 @app.route("/api/build-route", methods=["POST"])

@@ -315,6 +315,33 @@ class LoopTestCase(unittest.TestCase):
             1,
         )
 
+    def test_place_info_endpoint_returns_description(self):
+        fake_info = {
+            "image": {
+                "url": "https://upload.wikimedia.org/wikipedia/commons/test.jpg",
+                "page_url": "https://commons.wikimedia.org/wiki/File:test.jpg",
+                "title": "test.jpg",
+                "source": "Wikimedia Commons",
+                "artist": "Author",
+                "license": "CC BY-SA 4.0",
+            },
+            "description": "Короткое описание достопримечательности.",
+            "description_source": "Wikipedia",
+            "description_url": "https://ru.wikipedia.org/wiki/Test",
+            "title": "Test",
+        }
+        with patch.object(app, "get_place_info", return_value=fake_info) as mocked:
+            response = self.client.get(
+                "/api/place-info?name=Музей&lat=51.5336&lon=46.0343"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data["description"], fake_info["description"])
+        self.assertEqual(data["description_source"], "Wikipedia")
+        self.assertEqual(data["image"], fake_info["image"])
+        mocked.assert_called_once()
+
     def test_place_image_urls_are_restricted_to_wikimedia(self):
         self.assertTrue(
             app._is_safe_https_url(
