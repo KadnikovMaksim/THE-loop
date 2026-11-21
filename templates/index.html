@@ -281,6 +281,15 @@
               Фотографии:
               <a href="https://commons.wikimedia.org/" target="_blank" rel="noopener">Wikimedia Commons</a>
             </p>
+
+            <button class="btn nav-start-btn" id="navStartBtn" type="button" hidden>
+              <span class="btn-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m3 11 19-9-9 19-2-8-8-2Z" />
+                </svg>
+              </span>
+              <span>Начать навигацию</span>
+            </button>
           </section>
 
           <footer class="sheet-foot">
@@ -316,12 +325,47 @@
     <main class="map-wrap">
       <div id="map" role="application" aria-label="Карта. Нажмите, чтобы поставить точку маршрута."></div>
 
+      <div class="nav-panel" id="navPanel" role="status" aria-live="polite" hidden>
+        <div class="nav-arrow" id="navArrow" aria-hidden="true">↑</div>
+        <div class="nav-main">
+          <div class="nav-instruction" id="navInstruction">Ждём GPS…</div>
+          <div class="nav-sub" id="navSub">Разрешите доступ к геопозиции</div>
+          <div class="nav-meta" id="navMeta"></div>
+        </div>
+        <div class="nav-actions">
+          <button class="nav-icon-btn" id="navVoiceBtn" type="button" title="Выключить голос" aria-label="Выключить голос" aria-pressed="true">
+            <svg class="voice-on" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="M15 9a4 4 0 0 1 0 6" /><path d="M18 6a8 8 0 0 1 0 12" />
+            </svg>
+            <svg class="voice-off" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M11 5 6 9H3v6h3l5 4V5Z" /><path d="m16 9 5 6M21 9l-5 6" />
+            </svg>
+          </button>
+          <button class="nav-icon-btn nav-stop" id="navStopBtn" type="button" title="Завершить навигацию" aria-label="Завершить навигацию">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       <div class="map-hint" id="mapHint" aria-live="polite">
         <span class="hint-dot" aria-hidden="true"></span>
         <span id="mapHintText">Кликните по карте — точка A</span>
       </div>
 
       <div class="map-fabs">
+        <button class="fab fab-nav-start" id="navStartFab" type="button" title="Начать навигацию" aria-label="Начать навигацию" hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m3 11 19-9-9 19-2-8-8-2Z" />
+          </svg>
+        </button>
+        <button class="fab" id="followBtn" type="button" title="Вернуться к моему местоположению" aria-label="Вернуться к моему местоположению" hidden>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="7" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+            <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
         <button class="fab" id="themeBtn" type="button" title="Переключить тему" aria-label="Переключить тему">
           <svg class="theme-icon-light" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
             <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />

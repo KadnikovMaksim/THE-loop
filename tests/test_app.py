@@ -220,6 +220,65 @@ class LoopTestCase(unittest.TestCase):
         self.assertAlmostEqual(args[1], 51.5336)
         self.assertAlmostEqual(args[2], 46.0343)
 
+    def test_osrm_steps_are_parsed_for_navigation(self):
+        route = {
+            "legs": [
+                {
+                    "steps": [
+                        {
+                            "maneuver": {"type": "depart", "modifier": "left", "location": [46.0, 51.0]},
+                            "name": "улица A",
+                            "distance": 100,
+                            "duration": 80,
+                        },
+                        {
+                            "maneuver": {"type": "turn", "modifier": "right", "location": [46.01, 51.01]},
+                            "name": "улица B",
+                            "distance": 50,
+                            "duration": 40,
+                        },
+                        {
+                            "maneuver": {"type": "arrive", "location": [46.02, 51.02]},
+                            "distance": 0,
+                            "duration": 0,
+                        },
+                    ]
+                },
+                {
+                    "steps": [
+                        {
+                            "maneuver": {"type": "depart", "modifier": "left", "location": [46.02, 51.02]},
+                            "distance": 80,
+                            "duration": 60,
+                        },
+                        {
+                            "maneuver": {"type": "turn", "modifier": "left", "location": [46.03, 51.03]},
+                            "distance": 20,
+                            "duration": 15,
+                        },
+                        {
+                            "maneuver": {"type": "arrive", "location": [46.04, 51.04]},
+                            "distance": 0,
+                            "duration": 0,
+                        },
+                    ]
+                },
+            ]
+        }
+
+        steps = app._parse_route_steps(route)
+
+        self.assertEqual(len(steps), 5)
+        self.assertEqual(steps[0]["type"], "depart")
+        self.assertEqual(steps[1]["type"], "turn")
+        self.assertEqual(steps[2]["type"], "continue")
+        self.assertEqual(steps[2]["location"], [51.02, 46.02])
+        self.assertEqual(steps[-1]["type"], "arrive")
+        self.assertEqual(
+            [s["type"] for s in steps].count("arrive"),
+            1,
+        )
+
     def test_place_image_urls_are_restricted_to_wikimedia(self):
         self.assertTrue(
             app._is_safe_https_url(

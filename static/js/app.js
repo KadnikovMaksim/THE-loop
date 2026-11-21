@@ -77,6 +77,17 @@
   const toast = $("#toast");
   const photoNote = $("#photoNote");
 
+  const navPanel = $("#navPanel");
+  const navArrow = $("#navArrow");
+  const navInstruction = $("#navInstruction");
+  const navSub = $("#navSub");
+  const navMeta = $("#navMeta");
+  const navVoiceBtn = $("#navVoiceBtn");
+  const navStopBtn = $("#navStopBtn");
+  const navStartBtn = $("#navStartBtn");
+  const navStartFab = $("#navStartFab");
+  const followBtn = $("#followBtn");
+
   const mobileMedia = window.matchMedia(MOBILE_QUERY);
 
   const state = {
@@ -107,6 +118,32 @@
   let tileErrorShown = false;
   let routeImageToken = 0;
   const placeImageCache = new Map();
+
+  const nav = {
+    active: false,
+    watchId: null,
+    routeData: null,
+    coords: [],
+    cumulative: [],
+    totalM: 0,
+    steps: [],
+    stepEnds: [],
+    lastPos: null,
+    lastHeading: 0,
+    follow: true,
+    voice: true,
+    layer: null,
+    marker: null,
+    accuracy: null,
+    progressLine: null,
+    arrived: false,
+    offRoute: false,
+    announcedTurnKey: null,
+    announcedNearKey: null,
+    announcedOffRoute: false,
+    wakeLock: null,
+    firstFix: true,
+  };
 
   const sliderControls = [
     {
@@ -304,6 +341,594 @@
       paddingBottomRight: [mobile ? 24 : 28, mobile ? 160 : 28],
       maxZoom: options.maxZoom || 17,
     });
+  }
+
+  // ------------------------------------------------------------
+  // Навигация по GPS
+  // ------------------------------------------------------------
+
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const R = 6371000;
+    const p1 = (lat1 * Math.PI) / 180;
+    const p2 = (lat2 * Math.PI) / 180;
+    const dp = ((lat2 - lat1) * Math.PI) / 180;
+    const dl = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dp / 2) ** 2 +
+      Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) ** 2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function bearingDegrees(lat1, lon1, lat2, lon2) {
+    const p1 = (lat1 * Math.PI) / 180;
+    const p2 = (lat2 * Math.PI) / 180;
+    const dl = ((lon2 - lon1) * Math.PI) / 180;
+    const y = Math.sin(dl) * Math.cos(p2);
+    const x = Math.cos(p1) * Math.sin(p2) - Math.sin(p1) * Math.cos(p2) * Math.cos(dl);
+    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  }
+
+  function navDistanceText(meters) {
+    const m = Math.max(0, Number(meters) || 0);
+    if (m < 10) return `${Math.round(m)} м`;
+    if (m < 100) return `${Math.round(m / 5) * 5} м`;
+    if (m < 1000) return `${Math.round(m / 10) * 10} м`;
+    return `${(m / 1000).toFixed(1).replace(".0", "")} км`;
+  }
+
+  function navAheadText(meters) {
+    const m = Math.max(0, Number(meters) || 0);
+    return m < 12 ? "сейчас" : `через ${navDistanceText(m)}`;
+  }
+
+  function navSpeechDistance(meters) {
+    const m = Math.max(0, Math.round((Number(meters) || 0) / 10) * 10);
+    if (m < 10) return "несколько метров";
+    if (m < 1000) return `${m} метров`;
+    return `${(m / 1000).toFixed(1)} километра`;
+  }
+
+  function navRemainingText(remainingM) {
+    if (!nav.routeData || !nav.routeData.route) return "";
+    const totalMin = Number(nav.routeData.route.duration_min) || 0;
+    const ratio = nav.totalM > 0 ? Math.max(0, Math.min(1, remainingM / nav.totalM)) : 0;
+    const minutes = totalMin * ratio;
+    if (minutes < 0.75) return "меньше минуты";
+    const rounded = Math.round(minutes);
+    const eta = new Date(Date.now() + minutes * 60000).toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    if (rounded < 60) return `${rounded} мин · прибытие ${eta}`;
+    const hours = Math.floor(rounded / 60);
+    const rest = rounded % 60;
+    return `${hours} ч${rest ? ` ${rest} мин` : ""} · прибытие ${eta}`;
+  }
+
+  function navSideword(modifier, fork) {
+    const mod = String(modifier || "").toLowerCase();
+    if (mod.includes("left")) return fork ? "левее" : "налево";
+    if (mod.includes("right")) return fork ? "правее" : "направо";
+    return "прямо";
+  }
+
+  function navStepText(step) {
+    if (!step) return "Идите к финишу";
+    const type = String(step.type || "continue").toLowerCase();
+    const modifier = String(step.modifier || "").toLowerCase();
+    const name = step.name ? ` на ${step.name}` : "";
+    const side = navSideword(modifier, false);
+
+    if (type === "arrive") return "Идите к финишу";
+    if (type === "depart") return "Начните движение";
+    if (type === "uturn" || modifier.includes("uturn")) return "Развернитесь";
+    if (type === "turn") {
+      if (modifier.includes("straight")) return "Идите прямо";
+      const prefix = modifier.includes("sharp")
+        ? "Резко поверните"
+        : modifier.includes("slight")
+        ? "Плавно поверните"
+        : "Поверните";
+      return `${prefix} ${side}${name}`;
+    }
+    if (type === "end of road") return `В конце дороги поверните ${side}`;
+    if (type === "fork") return `Держитесь ${navSideword(modifier, true)}`;
+    if (type === "roundabout" || type === "rotary") {
+      return step.exit ? `На круговом движении сверните на ${step.exit}-й съезд` : "Пройдите круговое движение";
+    }
+    if (type === "merge") return "Присоединитесь к дороге";
+    if (type === "new name" || type === "continue") {
+      if (modifier.includes("left") || modifier.includes("right")) {
+        return `Поверните ${side}${name}`;
+      }
+      return step.name ? `Продолжайте движение по ${step.name}` : "Идите прямо";
+    }
+    return step.name ? `Продолжайте движение по ${step.name}` : "Идите прямо";
+  }
+
+  function navArrowFor(step, offRoute) {
+    if (offRoute) return "⟲";
+    if (!step) return "⚑";
+    const type = String(step.type || "").toLowerCase();
+    const modifier = String(step.modifier || "").toLowerCase();
+    if (type === "arrive") return "⚑";
+    if (type === "roundabout" || type === "rotary") return "↻";
+    if (type === "uturn" || modifier.includes("uturn")) return "↺";
+    if (modifier.includes("slight") && modifier.includes("left")) return "↖";
+    if (modifier.includes("slight") && modifier.includes("right")) return "↗";
+    if (modifier.includes("sharp") && modifier.includes("left")) return "↰";
+    if (modifier.includes("sharp") && modifier.includes("right")) return "↱";
+    if (modifier.includes("left")) return "←";
+    if (modifier.includes("right")) return "→";
+    return "↑";
+  }
+
+  function buildNavGeometry(route) {
+    const raw = route && Array.isArray(route.geometry) ? route.geometry : [];
+    const coords = [];
+    for (const point of raw) {
+      const lat = Number(point && point[0]);
+      const lon = Number(point && point[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) coords.push([lat, lon]);
+    }
+    const cumulative = [0];
+    let total = 0;
+    for (let i = 1; i < coords.length; i += 1) {
+      total += haversineMeters(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]);
+      cumulative.push(total);
+    }
+    return { coords, cumulative, total };
+  }
+
+  function nearestOnRoute(lat, lon) {
+    if (nav.coords.length < 2) return null;
+    let best = null;
+    for (let i = 0; i < nav.coords.length - 1; i += 1) {
+      const [lat1, lon1] = nav.coords[i];
+      const [lat2, lon2] = nav.coords[i + 1];
+      const midLat = ((lat1 + lat2) / 2) * (Math.PI / 180);
+      const kx = 111320 * Math.cos(midLat);
+      const ky = 110540;
+      const x2 = (lon2 - lon1) * kx;
+      const y2 = (lat2 - lat1) * ky;
+      const px = (lon - lon1) * kx;
+      const py = (lat - lat1) * ky;
+      const lengthSq = x2 * x2 + y2 * y2;
+      let t = lengthSq > 0 ? (px * x2 + py * y2) / lengthSq : 0;
+      t = Math.max(0, Math.min(1, t));
+      const distance = Math.hypot(px - x2 * t, py - y2 * t);
+      if (!best || distance < best.distance) {
+        const segment = nav.cumulative[i + 1] - nav.cumulative[i];
+        best = {
+          distance,
+          index: i,
+          along: nav.cumulative[i] + segment * t,
+        };
+      }
+    }
+    return best;
+  }
+
+  function coordsUntil(along) {
+    if (along <= 0 || nav.coords.length < 2) return [];
+    if (along >= nav.totalM) return nav.coords.slice();
+    const result = [nav.coords[0]];
+    for (let i = 1; i < nav.coords.length; i += 1) {
+      if (nav.cumulative[i] <= along) {
+        result.push(nav.coords[i]);
+        continue;
+      }
+      const previous = nav.cumulative[i - 1];
+      const segment = nav.cumulative[i] - previous;
+      const t = segment > 0 ? Math.max(0, Math.min(1, (along - previous) / segment)) : 0;
+      result.push([
+        nav.coords[i - 1][0] + (nav.coords[i][0] - nav.coords[i - 1][0]) * t,
+        nav.coords[i - 1][1] + (nav.coords[i][1] - nav.coords[i - 1][1]) * t,
+      ]);
+      break;
+    }
+    return result;
+  }
+
+  function stepIndexFor(progress) {
+    if (!nav.stepEnds.length) return -1;
+    for (let i = 0; i < nav.stepEnds.length; i += 1) {
+      if (progress <= nav.stepEnds[i] + 0.5) return i;
+    }
+    return nav.stepEnds.length - 1;
+  }
+
+  function routeHasGeometry() {
+    return Boolean(
+      state.routeData &&
+        state.routeData.route &&
+        Array.isArray(state.routeData.route.geometry) &&
+        state.routeData.route.geometry.length >= 2
+    );
+  }
+
+  function updateNavStartButtons() {
+    const canStart = routeHasGeometry() && !nav.active;
+    navStartBtn.hidden = !canStart;
+    navStartFab.hidden = !canStart;
+  }
+
+  function updateVoiceButton() {
+    navVoiceBtn.classList.toggle("is-muted", !nav.voice);
+    navVoiceBtn.setAttribute("aria-pressed", String(nav.voice));
+    const label = nav.voice ? "Выключить голос" : "Включить голос";
+    navVoiceBtn.title = label;
+    navVoiceBtn.setAttribute("aria-label", label);
+  }
+
+  function speak(text) {
+    if (!nav.voice || !text) return;
+    if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) return;
+    try {
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = "ru-RU";
+      utterance.rate = 1;
+      utterance.pitch = 1;
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    } catch (_error) {
+      /* голос недоступен — навигация продолжает работать текстом */
+    }
+  }
+
+  async function requestWakeLock() {
+    if (!nav.active || nav.arrived || nav.wakeLock || !("wakeLock" in navigator)) return;
+    try {
+      nav.wakeLock = await navigator.wakeLock.request("screen");
+      nav.wakeLock.addEventListener("release", () => {
+        nav.wakeLock = null;
+      });
+    } catch (_error) {
+      /* Wake Lock не обязателен */
+    }
+  }
+
+  function releaseWakeLock() {
+    try {
+      if (nav.wakeLock) nav.wakeLock.release();
+    } catch (_error) {
+      /* ignore */
+    }
+    nav.wakeLock = null;
+  }
+
+  function ensureNavMarker(lat, lon, heading, accuracy) {
+    const accent = cssVar("--accent", "#2563eb");
+    if (!nav.marker) {
+      nav.marker = L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: "nav-marker",
+          html: '<span class="nav-heading"></span><span class="nav-dot"></span>',
+          iconSize: [46, 46],
+          iconAnchor: [23, 23],
+        }),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1200,
+      }).addTo(nav.layer);
+    } else {
+      nav.marker.setLatLng([lat, lon]);
+    }
+
+    const markerEl = nav.marker.getElement();
+    if (markerEl) markerEl.style.setProperty("--heading", `${heading || 0}deg`);
+
+    if (!nav.accuracy) {
+      nav.accuracy = L.circle([lat, lon], {
+        pane: "placePane",
+        radius: Math.min(Math.max(accuracy, 10), 200),
+        color: accent,
+        weight: 1,
+        fillColor: accent,
+        fillOpacity: 0.1,
+        interactive: false,
+      }).addTo(nav.layer);
+    } else {
+      nav.accuracy.setLatLng([lat, lon]);
+      nav.accuracy.setRadius(Math.min(Math.max(accuracy, 10), 200));
+    }
+  }
+
+  function updateNavigationPanel(accuracy, nearest, remaining) {
+    let arrow = "↑";
+    let instruction = "Идите по маршруту";
+    let sub = navAheadText(remaining);
+    let meta = `Осталось ${navDistanceText(remaining)} · ${navRemainingText(remaining)}`;
+
+    navPanel.classList.toggle("is-off-route", Boolean(nav.offRoute));
+    navPanel.classList.toggle("is-arrived", Boolean(nav.arrived));
+
+    if (nav.arrived) {
+      arrow = "✓";
+      instruction = "Вы на месте";
+      sub = "Маршрут завершён";
+      meta = "Можно завершить навигацию";
+    } else if (nav.offRoute && nearest) {
+      arrow = "⟲";
+      instruction = "Вернитесь на маршрут";
+      sub = `до линии ${navDistanceText(nearest.distance)}`;
+    } else if (nav.steps.length && nearest) {
+      const index = stepIndexFor(nav.progress);
+      const target = nav.steps[index + 1];
+      if (index >= 0 && target) {
+        const distance = Math.max(0, (nav.stepEnds[index] || 0) - nav.progress);
+        arrow = navArrowFor(target, false);
+        instruction = navStepText(target);
+        sub = `${target.name ? `на ${target.name} · ` : ""}${navAheadText(distance)}`;
+      } else {
+        arrow = "⚑";
+        instruction = "Идите к финишу";
+        sub = navAheadText(remaining);
+      }
+    }
+
+    navArrow.textContent = arrow;
+    navInstruction.textContent = instruction;
+    navSub.textContent = sub;
+    navMeta.textContent = meta;
+    navMeta.title = `Точность GPS: ±${Math.round(accuracy)} м`;
+  }
+
+  function announceNavigation(nearest, remaining) {
+    if (nav.arrived) return;
+
+    if (nav.offRoute) {
+      if (!nav.announcedOffRoute) {
+        nav.announcedOffRoute = true;
+        speak("Вы отклонились от маршрута. Вернитесь на линию маршрута.");
+      }
+      return;
+    }
+
+    if (nav.announcedOffRoute) {
+      nav.announcedOffRoute = false;
+      speak("Вы снова на маршруте.");
+    }
+
+    if (!nav.steps.length || !nearest) return;
+    const index = stepIndexFor(nav.progress);
+    const target = nav.steps[index + 1];
+    if (!target) return;
+
+    const distance = Math.max(0, (nav.stepEnds[index] || 0) - nav.progress);
+    const key = `${index}:${target.type}:${target.modifier}:${target.name}:${target.exit || ""}`;
+
+    if (key !== nav.announcedTurnKey) {
+      nav.announcedTurnKey = key;
+      nav.announcedNearKey = null;
+      if (target.type === "arrive") {
+        speak(distance < 25 ? "Вы почти на месте." : "Идите к финишу.");
+      } else if (distance > 20) {
+        speak(`Через ${navSpeechDistance(distance)} ${navStepText(target).toLowerCase()}.`);
+      } else {
+        speak(navStepText(target));
+      }
+    } else if (distance <= 15 && nav.announcedNearKey !== key) {
+      nav.announcedNearKey = key;
+      speak(target.type === "arrive" ? "Вы почти на месте." : navStepText(target));
+    }
+  }
+
+  function onArrival() {
+    if (nav.arrived) return;
+    nav.arrived = true;
+    nav.offRoute = false;
+    if (nav.progressLine) nav.progressLine.setLatLngs(nav.coords.slice());
+    navArrow.textContent = "✓";
+    navInstruction.textContent = "Вы на месте";
+    navSub.textContent = "Маршрут завершён";
+    navMeta.textContent = "Можно завершить навигацию";
+    navPanel.classList.remove("is-off-route");
+    navPanel.classList.add("is-arrived");
+    if (nav.watchId !== null) {
+      navigator.geolocation.clearWatch(nav.watchId);
+      nav.watchId = null;
+    }
+    releaseWakeLock();
+    speak("Вы на месте. Навигация завершена.");
+    showToast("Вы на месте.", "success");
+  }
+
+  function onNavPosition(position) {
+    if (!nav.active) return;
+    const coords = position && position.coords ? position.coords : {};
+    const lat = Number(coords.latitude);
+    const lon = Number(coords.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+    const accuracy = Math.max(5, Number(coords.accuracy) || 30);
+    let heading = Number(coords.heading);
+    if (!Number.isFinite(heading) || heading < 0) {
+      if (nav.lastPos) {
+        const moved = haversineMeters(nav.lastPos[0], nav.lastPos[1], lat, lon);
+        if (moved > 1.5) {
+          heading = bearingDegrees(nav.lastPos[0], nav.lastPos[1], lat, lon);
+        }
+      }
+      if (!Number.isFinite(heading) || heading < 0) heading = nav.lastHeading || 0;
+    }
+    nav.lastHeading = heading;
+    nav.lastPos = [lat, lon];
+
+    ensureNavMarker(lat, lon, heading, accuracy);
+
+    if (nav.follow) {
+      const target = L.latLng(lat, lon);
+      if (nav.firstFix || map.getCenter().distanceTo(target) > 12) {
+        map.setView(target, Math.max(map.getZoom(), 17), { animate: false });
+      }
+    }
+    nav.firstFix = false;
+
+    const nearest = nearestOnRoute(lat, lon);
+    if (!nearest) {
+      navInstruction.textContent = "Идите по маршруту";
+      navSub.textContent = "GPS работает";
+      return;
+    }
+
+    nav.progress = nearest.along;
+    nav.offRoute = nearest.distance > Math.max(35, accuracy * 1.5);
+    if (nav.progressLine) nav.progressLine.setLatLngs(coordsUntil(nearest.along));
+
+    const remaining = Math.max(0, nav.totalM - nearest.along);
+    if (remaining <= 12) {
+      onArrival();
+      return;
+    }
+
+    updateNavigationPanel(accuracy, nearest, remaining);
+    announceNavigation(nearest, remaining);
+  }
+
+  function onNavError(error) {
+    if (!nav.active) return;
+    if (error && error.code === 1) {
+      showToast("Нет доступа к GPS. Разрешите геолокацию для этого сайта.", "error");
+      navInstruction.textContent = "Нет доступа к GPS";
+      navSub.textContent = "Разрешите геолокацию в браузере";
+      navMeta.textContent = "";
+      stopNavigation({ silent: true });
+      return;
+    }
+    navInstruction.textContent = "Ждём сигнал GPS…";
+    navSub.textContent =
+      error && error.code === 2
+        ? "GPS недоступен — выйдите на открытое место"
+        : "Проверьте, что GPS включён";
+    navMeta.textContent = "";
+  }
+
+  function startNavigation() {
+    if (nav.active) return;
+    if (!routeHasGeometry()) {
+      showToast("Сначала постройте маршрут.", "info");
+      return;
+    }
+    if (!window.isSecureContext) {
+      showToast("GPS на телефоне работает только по HTTPS. Откройте адрес https://…", "error");
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      showToast("GPS не поддерживается этим браузером.", "error");
+      return;
+    }
+
+    const route = state.routeData.route;
+    const geometry = buildNavGeometry(route);
+    if (geometry.coords.length < 2) {
+      showToast("В маршруте нет геометрии для навигации.", "error");
+      return;
+    }
+
+    stopNavigation({ silent: true });
+    nav.active = true;
+    nav.routeData = state.routeData;
+    nav.coords = geometry.coords;
+    nav.cumulative = geometry.cumulative;
+    nav.totalM = geometry.total;
+    nav.steps = Array.isArray(route.steps) ? route.steps : [];
+    let accumulated = 0;
+    const stepEnds = nav.steps.map((step) => {
+      accumulated += Math.max(0, Number(step.distance_m) || 0);
+      return accumulated;
+    });
+    nav.stepEnds =
+      accumulated > 0
+        ? stepEnds.map((value) => (value * nav.totalM) / accumulated)
+        : [];
+    nav.progress = 0;
+    nav.arrived = false;
+    nav.offRoute = false;
+    nav.follow = true;
+    nav.firstFix = true;
+    nav.lastPos = null;
+    nav.lastHeading = 0;
+    nav.announcedTurnKey = null;
+    nav.announcedNearKey = null;
+    nav.announcedOffRoute = false;
+
+    nav.layer = L.layerGroup().addTo(map);
+    nav.progressLine = L.polyline([], {
+      pane: "routePane",
+      color: cssVar("--green", "#059669"),
+      weight: 5,
+      opacity: 0.75,
+      lineCap: "round",
+      lineJoin: "round",
+      interactive: false,
+    }).addTo(nav.layer);
+
+    navPanel.hidden = false;
+    navPanel.classList.remove("is-arrived", "is-off-route");
+    navArrow.textContent = "◎";
+    navInstruction.textContent = "Ждём GPS…";
+    navSub.textContent = "Разрешите доступ к геопозиции";
+    navMeta.textContent = "";
+    navStartBtn.hidden = true;
+    navStartFab.hidden = true;
+    followBtn.hidden = true;
+    document.body.classList.add("navigating");
+    mapHint.classList.add("hidden");
+    if (isMobile()) setSheet(false);
+    updateVoiceButton();
+    map.setView(nav.coords[0], Math.max(map.getZoom(), 16));
+
+    try {
+      nav.watchId = navigator.geolocation.watchPosition(onNavPosition, onNavError, {
+        enableHighAccuracy: true,
+        maximumAge: 2000,
+        timeout: 20000,
+      });
+    } catch (error) {
+      showToast("Не удалось включить GPS. Проверьте разрешение браузера.", "error");
+      stopNavigation({ silent: true });
+      return;
+    }
+    requestWakeLock();
+    speak("Навигация началась. Следите за подсказками.");
+  }
+
+  function stopNavigation(options = {}) {
+    if (!nav.active) return;
+    if (nav.watchId !== null) {
+      try {
+        navigator.geolocation.clearWatch(nav.watchId);
+      } catch (_error) {
+        /* ignore */
+      }
+      nav.watchId = null;
+    }
+    releaseWakeLock();
+    nav.active = false;
+    nav.arrived = false;
+    nav.offRoute = false;
+    nav.lastPos = null;
+    nav.firstFix = true;
+    if (nav.layer) {
+      map.removeLayer(nav.layer);
+      nav.layer = null;
+    }
+    nav.marker = null;
+    nav.accuracy = null;
+    nav.progressLine = null;
+    navPanel.hidden = true;
+    navPanel.classList.remove("is-arrived", "is-off-route");
+    document.body.classList.remove("navigating");
+    followBtn.hidden = true;
+    updateNavStartButtons();
+    updatePointsUI();
+    try {
+      if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    } catch (_error) {
+      /* ignore */
+    }
+    if (!options.silent) showToast("Навигация завершена.", "info");
   }
 
   // ------------------------------------------------------------
@@ -699,8 +1324,11 @@
   }
 
   function clearResultUI() {
+    if (nav.active) stopNavigation({ silent: true });
     routeImageToken += 1;
     resultCard.hidden = true;
+    navStartBtn.hidden = true;
+    navStartFab.hidden = true;
     stopsList.innerHTML = "";
     resultBadge.textContent = "";
     resultBadge.className = "result-badge";
@@ -885,6 +1513,8 @@
     if (!stops.length) notes.push("Попробуйте увеличить максимальный крюк.");
     resultNote.hidden = notes.length === 0;
     resultNote.textContent = notes.join(" ");
+
+    updateNavStartButtons();
   }
 
   function updateCounts() {
@@ -1390,7 +2020,7 @@
   // ------------------------------------------------------------
 
   map.on("click", (event) => {
-    if (state.busy) return;
+    if (state.busy || nav.active) return;
 
     const point = {
       lat: roundCoord(event.latlng.lat),
@@ -1410,6 +2040,12 @@
   });
 
   map.on("moveend", saveSoon);
+  map.on("dragstart", () => {
+    if (nav.active) {
+      nav.follow = false;
+      followBtn.hidden = false;
+    }
+  });
 
   mapHint.addEventListener("click", () => {
     /* подсказка не перехватывает клики по карте */
@@ -1442,6 +2078,28 @@
   searchBtn.addEventListener("click", () => doSearch());
   routeBtn.addEventListener("click", () => doRoute());
   retryLive.addEventListener("click", () => doSearch({ forceLive: true, fit: false }));
+
+  navStartBtn.addEventListener("click", startNavigation);
+  navStartFab.addEventListener("click", startNavigation);
+  navStopBtn.addEventListener("click", () => stopNavigation());
+  navVoiceBtn.addEventListener("click", () => {
+    nav.voice = !nav.voice;
+    updateVoiceButton();
+    if (!nav.voice) {
+      try {
+        if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+      } catch (_error) {
+        /* ignore */
+      }
+    }
+  });
+  followBtn.addEventListener("click", () => {
+    nav.follow = true;
+    followBtn.hidden = true;
+    if (nav.lastPos) {
+      map.setView(nav.lastPos, Math.max(map.getZoom(), 17), { animate: false });
+    }
+  });
 
   themeBtn.addEventListener("click", () => {
     applyTheme(currentTheme === "dark" ? "light" : "dark");
@@ -1485,10 +2143,18 @@
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) saveNow();
+    if (document.hidden) {
+      saveNow();
+      releaseWakeLock();
+    } else if (nav.active && !nav.arrived) {
+      requestWakeLock();
+    }
   });
 
-  window.addEventListener("pagehide", saveNow);
+  window.addEventListener("pagehide", () => {
+    if (nav.active) stopNavigation({ silent: true });
+    saveNow();
+  });
 
   // ------------------------------------------------------------
   // Старт
@@ -1497,6 +2163,13 @@
   restoreSettings();
 
   sliderControls.forEach(setupSliderControl);
+
+  updateVoiceButton();
+  updateNavStartButtons();
+
+  if (new URLSearchParams(window.location.search).has("debug")) {
+    window.__loopDebug = { state, nav, map };
+  }
 
   applyTheme(currentTheme, { persist: false });
   renderPoints();

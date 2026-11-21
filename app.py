@@ -385,13 +385,67 @@ def _dedupe_consecutive(waypoints: list[tuple[float, float]]) -> list[tuple[floa
     return cleaned
 
 
+def _parse_route_steps(route: dict) -> list[dict]:
+    """Достаёт из ответа OSRM последовательность манёвров для навигации."""
+    legs = route.get("legs")
+    if not isinstance(legs, list):
+        return []
+
+    combined: list[dict] = []
+    for leg_index, leg in enumerate(legs):
+        if not isinstance(leg, dict):
+            continue
+        raw_steps = leg.get("steps")
+        if not isinstance(raw_steps, list):
+            continue
+
+        parsed: list[dict] = []
+        for step in raw_steps:
+            if not isinstance(step, dict):
+                continue
+            maneuver = step.get("maneuver") if isinstance(step.get("maneuver"), dict) else {}
+            location = maneuver.get("location")
+            if not isinstance(location, (list, tuple)) or len(location) < 2:
+                continue
+            try:
+                lat = float(location[1])
+                lon = float(location[0])
+                distance_m = max(0.0, float(step.get("distance") or 0))
+                duration_s = max(0.0, float(step.get("duration") or 0))
+            except (TypeError, ValueError):
+                continue
+            if not (math.isfinite(lat) and math.isfinite(lon)):
+                continue
+
+            parsed.append(
+                {
+                    "type": str(maneuver.get("type") or "continue")[:40],
+                    "modifier": str(maneuver.get("modifier") or "")[:40],
+                    "name": str(step.get("name") or "")[:200],
+                    "distance_m": round(distance_m, 1),
+                    "duration_s": round(duration_s, 1),
+                    "location": [lat, lon],
+                    "exit": maneuver.get("exit"),
+                }
+            )
+
+        for index, step in enumerate(parsed):
+            if leg_index > 0 and index == 0 and step["type"] == "depart":
+                step = {**step, "type": "continue", "modifier": "straight"}
+            if leg_index < len(legs) - 1 and index == len(parsed) - 1 and step["type"] == "arrive":
+                continue
+            combined.append(step)
+
+    return combined
+
+
 def _request_route_chunk(
     base_url: str,
     chunk: list[tuple[float, float]],
     session: requests.Session,
 ) -> dict | None:
     coords_str = ";".join(f"{lon},{lat}" for lat, lon in chunk)
-    url = f"{base_url}/{coords_str}?overview=full&geometries=geojson&steps=false"
+    url = f"{base_url}/{coords_str}?overview=full&geometries=geojson&steps=true"
     try:
         resp = session.get(url, timeout=(4, ROUTING_TIMEOUT))
         resp.raise_for_status()
@@ -432,6 +486,7 @@ def _request_route_chunk(
         "geometry": latlon_coords,
         "distance_km": distance_km,
         "duration_s": duration_s,
+        "steps": _parse_route_steps(route),
         "provider": base_url,
     }
 
@@ -450,6 +505,7 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
             "geometry": [[lat, lon] for lat, lon in cleaned],
             "distance_km": 0.0,
             "duration_min": 0.0,
+            "steps": [],
             "fallback": True,
         }
 
@@ -459,6 +515,7 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
     deadline = time.monotonic() + ROUTING_TOTAL_BUDGET
 
     combined_geometry: list[list[float]] = []
+    chunk_steps: list[list[dict]] = []
     total_distance_km = 0.0
     total_duration_s = 0.0
     providers: list[str] = []
@@ -482,6 +539,7 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
             if combined_geometry[-1] == geom[0]:
                 geom = geom[1:]
         combined_geometry.extend(geom)
+        chunk_steps.append(chunk_result.get("steps") or [])
         total_distance_km += chunk_result["distance_km"]
         total_duration_s += chunk_result["duration_s"]
         providers.append(chunk_result["provider"])
@@ -497,8 +555,18 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
             "geometry": [[lat, lon] for lat, lon in cleaned],
             "distance_km": total_km,
             "duration_min": round((total_km / WALK_SPEED_KMH) * 60.0, 1),
+            "steps": [],
             "fallback": True,
         }
+
+    combined_steps: list[dict] = []
+    for index, steps in enumerate(chunk_steps):
+        current = [dict(step) for step in steps]
+        if index > 0 and current and current[0].get("type") == "depart":
+            current[0] = {**current[0], "type": "continue", "modifier": "straight"}
+        if index < len(chunk_steps) - 1 and current and current[-1].get("type") == "arrive":
+            current = current[:-1]
+        combined_steps.extend(current)
 
     distance_km = round(total_distance_km, 2)
     duration_min = (
@@ -513,6 +581,7 @@ def build_walking_route_geometry(waypoints: list[tuple[float, float]]) -> dict:
         "geometry": combined_geometry,
         "distance_km": distance_km,
         "duration_min": duration_min,
+        "steps": combined_steps,
         "fallback": False,
     }
 
@@ -1348,6 +1417,7 @@ def _security_headers(response):
         "connect-src 'self'; font-src 'self' data:; object-src 'none'; "
         "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
     )
+    response.headers.setdefault("Permissions-Policy", "geolocation=(self)")
     if request.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
