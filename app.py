@@ -745,6 +745,37 @@ def _extract_lat_lon_from_geometry(geometry: dict | None) -> tuple[float | None,
     )
 
 
+_CLUB_NAME_FORMS = {
+    "клуб", "клуба", "клубу", "клубом", "клубе", "клубы", "клубов",
+    "клубам", "клубами", "клубах", "клубный", "клубная", "клубное",
+    "клубные", "клубного", "клубной", "клубных",
+}
+
+
+def _looks_like_club(tags: dict, name: str) -> bool:
+    """Отсекает ночные, подростковые, спортивные и прочие клубы."""
+    if not isinstance(tags, dict):
+        return False
+
+    if "club" in {str(key).casefold() for key in tags}:
+        return True
+    if str(tags.get("amenity") or "").casefold() in {"nightclub", "stripclub"}:
+        return True
+    if str(tags.get("building") or "").casefold() == "club":
+        return True
+    if str(tags.get("leisure") or "").casefold() == "club":
+        return True
+
+    tokens = [token for token in re.split(r"[^\wа-яё]+", str(name or "").casefold()) if token]
+    return any(
+        token in _CLUB_NAME_FORMS
+        or token.endswith("клуб")
+        or token == "club"
+        or token.endswith("club")
+        for token in tokens
+    )
+
+
 def _place_from_tags(tags: dict, lat, lon, place_id=None) -> dict | None:
     """Собирает нормализованное место из тегов OSM. Возвращает None, если нет имени."""
     if not isinstance(tags, dict):
@@ -754,6 +785,8 @@ def _place_from_tags(tags: dict, lat, lon, place_id=None) -> dict | None:
         return None
     name = str(name).strip()
     if not name:
+        return None
+    if _looks_like_club(tags, name):
         return None
     if isinstance(lat, bool) or isinstance(lon, bool):
         return None

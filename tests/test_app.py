@@ -220,6 +220,42 @@ class LoopTestCase(unittest.TestCase):
         self.assertAlmostEqual(args[1], 51.5336)
         self.assertAlmostEqual(args[2], 46.0343)
 
+    def test_clubs_are_filtered_from_places(self):
+        club = app._place_from_tags(
+            {"name": "Подростковый клуб «Юность»", "amenity": "community_centre"},
+            51.53,
+            46.03,
+        )
+        nightclub = app._place_from_tags(
+            {"name": "Ночной клуб", "amenity": "nightclub"},
+            51.53,
+            46.03,
+        )
+        museum = app._place_from_tags(
+            {
+                "name": "Художественный музей",
+                "tourism": "museum",
+                "contact:vk": "https://vk.com/club123",
+            },
+            51.53,
+            46.03,
+        )
+
+        self.assertIsNone(club)
+        self.assertIsNone(nightclub)
+        self.assertIsNotNone(museum)
+
+    def test_local_geojson_no_longer_contains_clubs(self):
+        import json
+        from pathlib import Path
+
+        raw = json.loads(Path(app.SARATOV_GEOJSON_FILE).read_text(encoding="utf-8"))
+        for feature in raw.get("features", []):
+            props = feature.get("properties") or {}
+            tags = props.get("tags") if isinstance(props.get("tags"), dict) else props
+            name = tags.get("name") or tags.get("name:ru") or tags.get("name:en") or ""
+            self.assertFalse(app._looks_like_club(tags, name), name)
+
     def test_osrm_steps_are_parsed_for_navigation(self):
         route = {
             "legs": [

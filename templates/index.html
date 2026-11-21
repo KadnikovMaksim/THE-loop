@@ -106,10 +106,19 @@
               </div>
             </div>
 
+            <div class="mode-switch" id="modeSwitch" role="group" aria-label="Начало маршрута">
+              <button class="mode-btn is-active" id="modeMe" type="button" data-mode="me" aria-pressed="true">
+                От меня
+              </button>
+              <button class="mode-btn" id="modeManual" type="button" data-mode="manual" aria-pressed="false">
+                От точки A
+              </button>
+            </div>
+
             <button class="point-row" id="pointARow" type="button">
               <span class="point-dot a" aria-hidden="true">A</span>
               <span class="point-info">
-                <span class="point-label">Точка A</span>
+                <span class="point-label" id="pointALabel">Точка A</span>
                 <span class="point-value" id="pointAValue">Кликните по карте</span>
               </span>
               <span class="point-go" aria-hidden="true">
@@ -132,7 +141,8 @@
               </span>
             </button>
 
-            <p class="hint">Первый клик по карте ставит точку A, второй — B. Следующий клик начнёт новый маршрут.</p>
+            <p class="hint" id="pointsHint">Первый клик по карте ставит точку A, второй — B. Следующий клик начнёт новый маршрут.</p>
+            <p class="geo-status" id="geoStatus" hidden></p>
           </section>
 
           <section class="card" aria-labelledby="categoriesTitle">

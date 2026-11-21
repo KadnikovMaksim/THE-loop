@@ -40,10 +40,15 @@
 
   const pointARow = $("#pointARow");
   const pointBRow = $("#pointBRow");
+  const pointALabel = $("#pointALabel");
   const pointAValue = $("#pointAValue");
   const pointBValue = $("#pointBValue");
   const swapBtn = $("#swapBtn");
   const resetBtn = $("#resetBtn");
+  const modeMe = $("#modeMe");
+  const modeManual = $("#modeManual");
+  const pointsHint = $("#pointsHint");
+  const geoStatus = $("#geoStatus");
 
   const categoriesEl = $("#categories");
   const catsAll = $("#catsAll");
@@ -91,6 +96,9 @@
   const mobileMedia = window.matchMedia(MOBILE_QUERY);
 
   const state = {
+    mode: "me",
+    userLocation: null,
+    geoBusy: false,
     pointA: null,
     pointB: null,
     allPlaces: [],
@@ -117,6 +125,9 @@
   let tileErrors = 0;
   let tileErrorShown = false;
   let routeImageToken = 0;
+  let userLayer = null;
+  let userMarker = null;
+  let userAccuracy = null;
   const placeImageCache = new Map();
 
   const nav = {
@@ -228,6 +239,7 @@
     if (!tileLayer) setTiles();
     if (state.routeData) renderRoute(state.routeData, { fit: false });
     if (state.pointA && state.pointB) drawPreview(false);
+    if (state.userLocation) renderUserLocation();
     if (options.persist !== false) saveSoon();
   }
 
@@ -341,6 +353,197 @@
       paddingBottomRight: [mobile ? 24 : 28, mobile ? 160 : 28],
       maxZoom: options.maxZoom || 17,
     });
+  }
+
+  // ------------------------------------------------------------
+  // Автоопределение местоположения и режимы старта
+  // ------------------------------------------------------------
+
+  function setGeoStatus(message, type) {
+    if (!message) {
+      geoStatus.hidden = true;
+      geoStatus.textContent = "";
+      delete geoStatus.dataset.type;
+      return;
+    }
+    geoStatus.hidden = false;
+    geoStatus.textContent = message;
+    geoStatus.dataset.type = type || "info";
+  }
+
+  function renderUserLocation() {
+    if (userLayer) {
+      map.removeLayer(userLayer);
+      userLayer = null;
+      userMarker = null;
+      userAccuracy = null;
+    }
+    if (!state.userLocation || nav.active) return;
+
+    const { lat, lon, accuracy } = state.userLocation;
+    const accent = cssVar("--accent", "#2563eb");
+    userLayer = L.layerGroup().addTo(map);
+
+    userAccuracy = L.circle([lat, lon], {
+      pane: "placePane",
+      radius: Math.min(Math.max(accuracy || 30, 10), 200),
+      color: accent,
+      weight: 1,
+      fillColor: accent,
+      fillOpacity: 0.1,
+      interactive: false,
+    }).addTo(userLayer);
+
+    userMarker = L.circleMarker([lat, lon], {
+      pane: "placePane",
+      radius: 7,
+      color: "#ffffff",
+      weight: 2.5,
+      fillColor: accent,
+      fillOpacity: 1,
+      interactive: false,
+    })
+      .bindTooltip("Вы здесь", { direction: "top", offset: [0, -4] })
+      .addTo(userLayer);
+  }
+
+  function detectUserLocation(options = {}) {
+    const setAsA = options.setAsA !== false;
+    const center = Boolean(options.center);
+    const silent = Boolean(options.silent);
+
+    if (!window.isSecureContext) {
+      const message = "Автоопределение местоположения работает только по HTTPS.";
+      setGeoStatus(message, "error");
+      if (!silent) showToast(message, "error");
+      return Promise.resolve(null);
+    }
+    if (!("geolocation" in navigator)) {
+      const message = "Этот браузер не поддерживает геолокацию.";
+      setGeoStatus(message, "error");
+      if (!silent) showToast(message, "error");
+      return Promise.resolve(null);
+    }
+    if (state.geoBusy) return Promise.resolve(null);
+
+    state.geoBusy = true;
+    setGeoStatus("Определяем местоположение…", "info");
+    updatePointsUI();
+    updatePeek();
+
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = (value) => {
+        if (finished) return;
+        finished = true;
+        state.geoBusy = false;
+        updatePointsUI();
+        updatePeek();
+        resolve(value);
+      };
+
+      const onSuccess = (position) => {
+        const coords = position && position.coords ? position.coords : {};
+        const lat = Number(coords.latitude);
+        const lon = Number(coords.longitude);
+        const accuracy = Math.max(5, Number(coords.accuracy) || 30);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+          const message = "Не удалось получить корректные координаты.";
+          setGeoStatus(message, "error");
+          if (!silent) showToast(message, "error");
+          finish(null);
+          return;
+        }
+
+        state.userLocation = { lat, lon, accuracy };
+        renderUserLocation();
+        if (center) {
+          map.setView([lat, lon], Math.max(map.getZoom(), 15), { animate: false });
+        }
+
+        if (state.mode === "me" && setAsA) {
+          state.pointA = normalizePoint({ lat, lon });
+          afterPointsChanged();
+        } else {
+          renderPoints();
+          updatePointsUI();
+          updatePeek();
+          saveSoon();
+        }
+
+        setGeoStatus("", null);
+        finish(state.userLocation);
+      };
+
+      const onError = (error) => {
+        let message = "Не удалось определить местоположение.";
+        if (error && error.code === 1) {
+          message = "Доступ к геолокации запрещён. Разрешите его для этого сайта.";
+        } else if (error && error.code === 2) {
+          message = "GPS недоступен. Проверьте, включена ли геолокация.";
+        } else if (error && error.code === 3) {
+          message = "Определение местоположения заняло слишком много времени.";
+        }
+        setGeoStatus(message, "error");
+        if (!silent) showToast(message, "error");
+
+        if (state.mode === "me" && setAsA && !state.userLocation) {
+          state.pointA = null;
+          afterPointsChanged();
+        }
+        finish(null);
+      };
+
+      try {
+        navigator.geolocation.getCurrentPosition(onSuccess, onError, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 60000,
+        });
+      } catch (_error) {
+        const message = "Не удалось включить геолокацию.";
+        setGeoStatus(message, "error");
+        if (!silent) showToast(message, "error");
+        finish(null);
+      }
+    });
+  }
+
+  function setMode(mode) {
+    if (state.busy) return;
+    const next = mode === "manual" ? "manual" : "me";
+    if (next === state.mode) {
+      updatePointsUI();
+      return;
+    }
+
+    state.mode = next;
+    setGeoStatus("", null);
+
+    if (next === "me") {
+      if (state.userLocation) {
+        state.pointA = normalizePoint(state.userLocation);
+        afterPointsChanged();
+      } else {
+        detectUserLocation({ setAsA: true, center: true, silent: false });
+      }
+      renderUserLocation();
+    } else {
+      if (!state.pointA && state.userLocation) {
+        state.pointA = normalizePoint(state.userLocation);
+        afterPointsChanged();
+      } else {
+        renderPoints();
+        updatePointsUI();
+        updatePeek();
+        saveSoon();
+      }
+      renderUserLocation();
+    }
+
+    updatePointsUI();
+    updatePeek();
+    saveSoon();
   }
 
   // ------------------------------------------------------------
@@ -742,6 +945,7 @@
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
     const accuracy = Math.max(5, Number(coords.accuracy) || 30);
+    state.userLocation = { lat, lon, accuracy };
     let heading = Number(coords.heading);
     if (!Number.isFinite(heading) || heading < 0) {
       if (nav.lastPos) {
@@ -828,6 +1032,12 @@
 
     stopNavigation({ silent: true });
     nav.active = true;
+    if (userLayer) {
+      map.removeLayer(userLayer);
+      userLayer = null;
+      userMarker = null;
+      userAccuracy = null;
+    }
     nav.routeData = state.routeData;
     nav.coords = geometry.coords;
     nav.cumulative = geometry.cumulative;
@@ -921,6 +1131,7 @@
     navPanel.classList.remove("is-arrived", "is-off-route");
     document.body.classList.remove("navigating");
     followBtn.hidden = true;
+    renderUserLocation();
     updateNavStartButtons();
     updatePointsUI();
     try {
@@ -997,6 +1208,7 @@
       localStorage.setItem(
         LS_KEY,
         JSON.stringify({
+          mode: state.mode,
           pointA: state.pointA,
           pointB: state.pointB,
           categories: selectedCategories(),
@@ -1029,6 +1241,8 @@
 
   function restoreSettings() {
     const saved = readSettings();
+
+    state.mode = saved.mode === "manual" ? "manual" : "me";
 
     if (validPoint(saved.pointA)) state.pointA = normalizePoint(saved.pointA);
     if (validPoint(saved.pointB)) state.pointB = normalizePoint(saved.pointB);
@@ -1188,14 +1402,24 @@
       markerB = null;
     }
 
-    if (state.pointA) {
+    const aMatchesUser =
+      state.pointA &&
+      state.userLocation &&
+      haversineMeters(
+        state.pointA.lat,
+        state.pointA.lon,
+        state.userLocation.lat,
+        state.userLocation.lon
+      ) < 20;
+
+    if (state.pointA && !aMatchesUser) {
       markerA = L.marker([state.pointA.lat, state.pointA.lon], {
         icon: pointIcon("A"),
-        title: "Точка A",
+        title: state.mode === "me" ? "Моё местоположение" : "Точка A",
         riseOnHover: true,
         bubblingMouseEvents: false,
       }).addTo(map);
-      markerA.bindPopup("Точка A");
+      markerA.bindPopup(state.mode === "me" ? "Моё местоположение" : "Точка A");
     }
 
     if (state.pointB) {
@@ -1551,6 +1775,24 @@
       return;
     }
 
+    if (state.mode === "me") {
+      if (!state.pointA) {
+        peekTitle.textContent = state.geoBusy ? "Определяем местоположение…" : "Откуда идём?";
+        peekSub.textContent = state.geoBusy
+          ? "Разрешите доступ к GPS"
+          : "Нажмите на «Моё местоположение»";
+        return;
+      }
+      if (!state.pointB) {
+        peekTitle.textContent = "Вы здесь";
+        peekSub.textContent = "Тапните по карте — точка B";
+        return;
+      }
+      peekTitle.textContent = "Маршрут от вас";
+      peekSub.textContent = "Откройте настройки и постройте маршрут";
+      return;
+    }
+
     if (!state.pointA) {
       peekTitle.textContent = "Маршрут по местам";
       peekSub.textContent = "Тапните по карте — точка A";
@@ -1568,22 +1810,70 @@
   }
 
   function updatePointsUI() {
-    pointAValue.textContent = state.pointA ? formatPoint(state.pointA) : "Кликните по карте";
+    const busy = Boolean(state.busy);
+    const isMe = state.mode === "me";
+
+    modeMe.classList.toggle("is-active", isMe);
+    modeManual.classList.toggle("is-active", !isMe);
+    modeMe.setAttribute("aria-pressed", String(isMe));
+    modeManual.setAttribute("aria-pressed", String(!isMe));
+    modeMe.disabled = busy;
+    modeManual.disabled = busy;
+
+    pointALabel.textContent = isMe ? "Моё местоположение" : "Точка A";
+    if (isMe) {
+      if (state.userLocation) {
+        pointAValue.textContent = formatPoint(state.pointA || state.userLocation);
+      } else if (state.geoBusy) {
+        pointAValue.textContent = "Определяем местоположение…";
+      } else if (state.pointA) {
+        pointAValue.textContent = formatPoint(state.pointA);
+      } else {
+        pointAValue.textContent = "Нажмите, чтобы определить";
+      }
+    } else {
+      pointAValue.textContent = state.pointA ? formatPoint(state.pointA) : "Кликните по карте";
+    }
     pointBValue.textContent = state.pointB ? formatPoint(state.pointB) : "Кликните по карте";
     pointARow.classList.toggle("filled", Boolean(state.pointA));
     pointBRow.classList.toggle("filled", Boolean(state.pointB));
+    pointARow.classList.toggle("gps", isMe);
+    pointARow.disabled = busy || (isMe && state.geoBusy);
+    pointARow.title = isMe ? "Обновить моё местоположение" : "Показать точку A на карте";
+    pointARow.setAttribute(
+      "aria-label",
+      isMe ? "Обновить моё местоположение" : "Показать точку A на карте"
+    );
 
-    swapBtn.disabled = Boolean(state.busy) || !(state.pointA && state.pointB);
-    resetBtn.disabled = Boolean(state.busy);
+    swapBtn.disabled = busy || isMe || !(state.pointA && state.pointB);
+    resetBtn.disabled = busy;
 
-    if (!state.pointA) {
+    if (isMe) {
+      pointsHint.textContent =
+        "Точка A — ваше местоположение. Кликните по карте, чтобы поставить B. Нажмите на A, чтобы обновить GPS.";
+    } else {
+      pointsHint.textContent =
+        "Первый клик по карте ставит точку A, второй — B. Следующий клик начнёт новый маршрут.";
+    }
+
+    if (isMe) {
+      if (!state.pointA) {
+        mapHintText.textContent = state.geoBusy
+          ? "Определяем местоположение…"
+          : "Нажмите на «Моё местоположение»";
+      } else if (!state.pointB) {
+        mapHintText.textContent = "Кликните по карте — точка B";
+      } else {
+        mapHintText.textContent = "Клик — новая точка B";
+      }
+    } else if (!state.pointA) {
       mapHintText.textContent = "Кликните по карте — точка A";
     } else if (!state.pointB) {
       mapHintText.textContent = "Кликните по карте — точка B";
     } else {
       mapHintText.textContent = "Клик — новый маршрут";
     }
-    mapHint.classList.toggle("hidden", Boolean(state.pointA && state.pointB));
+    mapHint.classList.toggle("hidden", Boolean(state.pointA && state.pointB) && !nav.active);
   }
 
   function refreshFilter(options = {}) {
@@ -1721,12 +2011,18 @@
 
   function ensurePoints() {
     if (state.pointA && state.pointB) return true;
-    showToast(
-      !state.pointA
-        ? "Сначала поставьте точку A: кликните по карте."
-        : "Теперь поставьте точку B: кликните по карте.",
-      "info"
-    );
+
+    let message;
+    if (!state.pointA) {
+      message =
+        state.mode === "me"
+          ? "Не удалось определить ваше местоположение. Нажмите на строку «Моё местоположение» или выберите режим «От точки A»."
+          : "Сначала поставьте точку A: кликните по карте.";
+    } else {
+      message = "Теперь поставьте точку B: кликните по карте.";
+    }
+
+    showToast(message, "info");
     updatePointsUI();
     updatePeek();
     return false;
@@ -1748,6 +2044,9 @@
     retryLive.disabled = busy;
     resetBtn.disabled = busy;
     swapBtn.disabled = busy || !(state.pointA && state.pointB);
+    modeMe.disabled = busy;
+    modeManual.disabled = busy;
+    pointARow.disabled = busy;
     catsAll.disabled = busy;
     catsNone.disabled = busy;
 
@@ -1771,6 +2070,7 @@
       kind === "route" ? "Строим…" : "Построить маршрут",
       kind === "route" ? "Строим…" : "Маршрут"
     );
+    updatePointsUI();
   }
 
   async function doSearch(options = {}) {
@@ -1959,7 +2259,7 @@
   }
 
   function swapPoints() {
-    if (!(state.pointA && state.pointB) || state.busy) return;
+    if (state.mode === "me" || !(state.pointA && state.pointB) || state.busy) return;
     const oldA = state.pointA;
     state.pointA = state.pointB;
     state.pointB = oldA;
@@ -1969,18 +2269,34 @@
 
   function resetAll() {
     if (state.busy) return;
-    state.pointA = null;
-    state.pointB = null;
+    if (state.mode === "me") {
+      state.pointA = state.userLocation ? normalizePoint(state.userLocation) : null;
+      state.pointB = null;
+    } else {
+      state.pointA = null;
+      state.pointB = null;
+    }
+
     clearDerivedForPoints();
     renderPoints();
     drawPreview(false);
     updatePointsUI();
     updatePeek();
     saveNow();
-    syncPoints({ reset: true });
+    syncPoints({ point_a: state.pointA, point_b: state.pointB });
     map.closePopup();
     if (isMobile()) setSheet(false);
-    showToast("Маршрут сброшен. Кликните по карте — новая точка A.", "info");
+
+    if (state.mode === "me" && !state.userLocation) {
+      detectUserLocation({ setAsA: true, center: true, silent: false });
+    }
+
+    showToast(
+      state.mode === "me"
+        ? "Точка B сброшена. Кликните по карте, чтобы выбрать новый финиш."
+        : "Маршрут сброшен. Кликните по карте — новая точка A.",
+      "info"
+    );
   }
 
   function onCategoriesChanged() {
@@ -2027,8 +2343,11 @@
       lon: roundCoord(event.latlng.lng),
     };
 
-    // Первый клик — A, второй — B, третий — новый маршрут.
-    if (!state.pointA || state.pointB) {
+    if (state.mode === "me") {
+      // В режиме «От меня» точка A — GPS, клик всегда задаёт/меняет B.
+      state.pointB = point;
+    } else if (!state.pointA || state.pointB) {
+      // Ручной режим: первый клик — A, второй — B, третий — новый маршрут.
       state.pointA = point;
       state.pointB = null;
     } else {
@@ -2066,8 +2385,20 @@
     }
   });
 
-  pointARow.addEventListener("click", () => focusPoint(state.pointA));
+  pointARow.addEventListener("click", () => {
+    if (state.mode === "me") {
+      if (nav.active) {
+        showToast("Сначала завершите навигацию.", "info");
+        return;
+      }
+      detectUserLocation({ setAsA: true, center: true, silent: false });
+      return;
+    }
+    focusPoint(state.pointA);
+  });
   pointBRow.addEventListener("click", () => focusPoint(state.pointB));
+  modeMe.addEventListener("click", () => setMode("me"));
+  modeManual.addEventListener("click", () => setMode("manual"));
   swapBtn.addEventListener("click", swapPoints);
   resetBtn.addEventListener("click", resetAll);
 
@@ -2167,8 +2498,31 @@
   updateVoiceButton();
   updateNavStartButtons();
 
-  if (new URLSearchParams(window.location.search).has("debug")) {
-    window.__loopDebug = { state, nav, map };
+  const debugParams = new URLSearchParams(window.location.search);
+  if (debugParams.has("debug")) {
+    if (debugParams.has("mockgeo") && "geolocation" in navigator) {
+      const [mockLat, mockLon] = (debugParams.get("mockgeo") || "")
+        .split(",")
+        .map((value) => Number(value));
+      if (Number.isFinite(mockLat) && Number.isFinite(mockLon)) {
+        try {
+          navigator.geolocation.getCurrentPosition = (success) => {
+            success({
+              coords: {
+                latitude: mockLat,
+                longitude: mockLon,
+                accuracy: 8,
+                heading: 0,
+                speed: 0,
+              },
+            });
+          };
+        } catch (_error) {
+          /* ignore debug mock errors */
+        }
+      }
+    }
+    window.__loopDebug = { state, nav, map, detectUserLocation, setMode };
   }
 
   applyTheme(currentTheme, { persist: false });
@@ -2179,4 +2533,14 @@
   updatePointsUI();
   updatePeek();
   setSheet(false);
+
+  if (state.mode === "me") {
+    detectUserLocation({ setAsA: true, center: true, silent: false });
+  } else {
+    detectUserLocation({
+      setAsA: false,
+      center: !state.pointA && !state.pointB,
+      silent: true,
+    });
+  }
 })();
