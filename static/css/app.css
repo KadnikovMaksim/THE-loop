@@ -416,70 +416,6 @@ svg {
   line-height: 1.45;
 }
 
-.geo-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 12px;
-  margin-top: 10px;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  border-radius: 12px;
-  transition: background 0.15s, border-color 0.15s, transform 0.15s;
-}
-
-.geo-btn:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--card));
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
-}
-
-.geo-btn:active {
-  transform: scale(0.995);
-}
-
-.geo-btn:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
-.geo-icon {
-  display: grid;
-  place-items: center;
-  width: 17px;
-  height: 17px;
-}
-
-.geo-btn.is-loading .geo-icon svg {
-  display: none;
-}
-
-.geo-btn.is-loading .geo-icon::after {
-  display: block;
-  width: 15px;
-  height: 15px;
-  content: "";
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-.geo-hint code {
-  padding: 1px 4px;
-  color: var(--text);
-  font-size: 10.5px;
-  background: var(--soft);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-}
-
 /* Категории */
 
 .chips {
@@ -991,17 +927,71 @@ svg {
   border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 
-.stop-num {
+.stop-thumb {
+  --c: var(--accent);
+  position: relative;
   display: grid;
   flex: 0 0 auto;
   place-items: center;
-  width: 27px;
-  height: 27px;
-  color: #fff;
-  font-size: 11.5px;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--c) 20%, var(--soft)),
+    var(--soft)
+  );
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.stop-thumb[data-cat="art"] { --c: var(--cat-art); }
+.stop-thumb[data-cat="tourism_view"] { --c: var(--cat-tourism_view); }
+.stop-thumb[data-cat="culture"] { --c: var(--cat-culture); }
+.stop-thumb[data-cat="historic"] { --c: var(--cat-historic); }
+.stop-thumb[data-cat="nature"] { --c: var(--cat-nature); }
+.stop-thumb[data-cat="urban"] { --c: var(--cat-urban); }
+.stop-thumb[data-cat="worship"] { --c: var(--cat-worship); }
+
+.stop-thumb img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.stop-thumb-fallback {
+  color: color-mix(in srgb, var(--c) 70%, var(--text));
+  font-size: 16px;
   font-weight: 850;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border-radius: 50%;
+}
+
+.stop-thumb-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 1;
+  display: none;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 850;
+  background: rgba(15, 23, 42, 0.82);
+  border-radius: 999px;
+  backdrop-filter: blur(4px);
+}
+
+.stop-thumb.has-image .stop-thumb-fallback {
+  display: none;
+}
+
+.stop-thumb.has-image .stop-thumb-badge {
+  display: grid;
 }
 
 .stop-info {
@@ -1028,6 +1018,17 @@ svg {
   text-overflow: ellipsis;
 }
 
+.stop-credit {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
 .stop-go {
   flex: 0 0 auto;
   color: var(--muted);
@@ -1041,6 +1042,22 @@ svg {
   text-align: center;
   border: 1px dashed var(--border);
   border-radius: 12px;
+}
+
+.photo-note {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 9.5px;
+  line-height: 1.4;
+}
+
+.photo-note a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.photo-note a:hover {
+  text-decoration: underline;
 }
 
 .sheet-foot {
@@ -1161,20 +1178,6 @@ svg {
 
 .fab:active {
   transform: scale(0.94);
-}
-
-.fab.is-loading svg {
-  display: none;
-}
-
-.fab.is-loading::after {
-  width: 17px;
-  height: 17px;
-  content: "";
-  border: 2px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
 }
 
 .theme-icon-dark {
@@ -1316,6 +1319,33 @@ svg {
   margin-top: 2px;
   font-size: 13px;
   line-height: 1.3;
+}
+
+.popup-photo {
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: 150px;
+  margin: -2px 0 8px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--soft);
+}
+
+.popup-credit {
+  margin: 6px 0 2px;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.popup-credit a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.popup-credit a:hover {
+  text-decoration: underline;
 }
 
 /* Маркеры */
@@ -1589,11 +1619,6 @@ svg {
 
   .slider-unit {
     font-size: 11px;
-  }
-
-  .geo-btn {
-    min-height: 46px;
-    font-size: 13px;
   }
 
   .range {

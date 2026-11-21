@@ -73,11 +73,9 @@
 
   const mapHint = $("#mapHint");
   const mapHintText = $("#mapHintText");
-  const locateBtn = $("#locateBtn");
-  const locateCardBtn = $("#locateCardBtn");
-  const geoHint = $("#geoHint");
   const themeBtn = $("#themeBtn");
   const toast = $("#toast");
+  const photoNote = $("#photoNote");
 
   const mobileMedia = window.matchMedia(MOBILE_QUERY);
 
@@ -107,7 +105,8 @@
   let tileLayer = null;
   let tileErrors = 0;
   let tileErrorShown = false;
-  let locationLayer = null;
+  let routeImageToken = 0;
+  const placeImageCache = new Map();
 
   const sliderControls = [
     {
@@ -627,6 +626,33 @@
     if (fit) fitMapTo(bbox, { maxZoom: 16 });
   }
 
+  function popupImageHtml(image) {
+    if (!image || !image.url) return "";
+    const details = [image.artist, image.license].filter(Boolean).map(esc).join(" · ");
+    const source = image.page_url
+      ? `<a href="${esc(image.page_url)}" target="_blank" rel="noopener">${esc(
+          image.source || "Wikimedia Commons"
+        )}</a>`
+      : esc(image.source || "Wikimedia Commons");
+    return (
+      `<img class="popup-photo" src="${esc(image.url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` +
+      `<div class="popup-credit">${details ? `${details} · ` : ""}${source}</div>`
+    );
+  }
+
+  function popupPlace(place, image) {
+    const meta = CATEGORY_META[place.category] || CATEGORY_META.tourism_view;
+    const cat = CATEGORY_META[place.category] ? place.category : "tourism_view";
+    return (
+      `<div class="popup">` +
+      popupImageHtml(image) +
+      `<div class="popup-cat" data-cat="${esc(cat)}"><span class="popup-dot"></span>` +
+      `${esc(place.category_label || meta.label)}</div>` +
+      `<b>${esc(place.name || "Место")}</b>` +
+      `</div>`
+    );
+  }
+
   function renderPlaces(places) {
     placeLayer.clearLayers();
 
@@ -651,13 +677,18 @@
         offset: [0, -3],
         opacity: 0.95,
       });
-      marker.bindPopup(
-        `<div class="popup">` +
-          `<div class="popup-cat" data-cat="${esc(cat)}"><span class="popup-dot"></span>` +
-          `${esc(place.category_label || meta.label)}</div>` +
-          `<b>${esc(place.name || "Место")}</b>` +
-          `</div>`
-      );
+      marker.bindPopup(popupPlace(place, null));
+
+      let imageApplied = false;
+      marker.on("popupopen", async () => {
+        if (imageApplied) return;
+        const image = await fetchPlaceImage(place);
+        if (image && marker.isPopupOpen()) {
+          marker.setPopupContent(popupPlace(place, image));
+          imageApplied = true;
+        }
+      });
+
       marker.addTo(placeLayer);
     });
   }
@@ -668,6 +699,7 @@
   }
 
   function clearResultUI() {
+    routeImageToken += 1;
     resultCard.hidden = true;
     stopsList.innerHTML = "";
     resultBadge.textContent = "";
@@ -677,12 +709,14 @@
     metricStops.textContent = "—";
     resultNote.hidden = true;
     resultNote.textContent = "";
+    photoNote.hidden = true;
   }
 
-  function stopPopup(stop, index) {
+  function stopPopup(stop, index, image) {
     const cat = CATEGORY_META[stop.category] ? stop.category : "tourism_view";
     return (
       `<div class="popup">` +
+      popupImageHtml(image) +
       `<div class="popup-cat" data-cat="${esc(cat)}"><span class="popup-dot"></span>` +
       `Остановка ${index + 1}${stop.category_label ? ` · ${esc(stop.category_label)}` : ""}</div>` +
       `<b>${esc(stop.name || "Место")}</b>` +
@@ -692,6 +726,7 @@
 
   function renderRoute(data, options = {}) {
     clearRouteVisual();
+    const imageToken = ++routeImageToken;
 
     const route = data && data.route ? data.route : null;
     const coords = route && Array.isArray(route.geometry) ? route.geometry : [];
@@ -743,11 +778,62 @@
         zIndexOffset: 200,
         bubblingMouseEvents: false,
       }).addTo(routeLayer);
-      marker.bindPopup(stopPopup(stop, index));
+      marker.bindPopup(stopPopup(stop, index, null));
       stopMarkers[index] = marker;
     });
 
     updateResultUI(data);
+    hydrateStopImages(stops, imageToken);
+  }
+
+  function updateStopThumb(index, image) {
+    if (!image || !image.url) return;
+    const thumb = stopsList.querySelector(`[data-thumb="${index}"]`);
+    if (!thumb) return;
+
+    const img = document.createElement("img");
+    img.src = image.url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("load", () => thumb.classList.add("has-image"));
+    img.addEventListener("error", () => {
+      img.remove();
+      thumb.classList.remove("has-image");
+      const credit = stopsList.querySelector(`[data-credit="${index}"]`);
+      if (credit) credit.hidden = true;
+    });
+    thumb.prepend(img);
+
+    const credit = stopsList.querySelector(`[data-credit="${index}"]`);
+    if (credit) {
+      const parts = [image.artist, image.license].filter(Boolean);
+      credit.textContent = parts.length ? `Фото: ${parts.join(" · ")}` : "Фото: Wikimedia Commons";
+      credit.title = parts.join(" · ");
+      credit.hidden = false;
+    }
+    photoNote.hidden = false;
+  }
+
+  async function hydrateStopImages(stops, token) {
+    const max = Math.min(stops.length, 12);
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < max) {
+        const index = cursor++;
+        if (token !== routeImageToken) return;
+        const stop = stops[index];
+        const image = await fetchPlaceImage(stop);
+        if (!image || token !== routeImageToken) continue;
+        updateStopThumb(index, image);
+        const marker = stopMarkers[index];
+        if (marker) marker.setPopupContent(stopPopup(stop, index, image));
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(3, max) }, worker));
   }
 
   function updateResultUI(data) {
@@ -762,18 +848,24 @@
 
     resultBadge.textContent = local ? "Локальные данные" : "Overpass";
     resultBadge.className = `result-badge ${local ? "local" : "live"}`;
+    photoNote.hidden = true;
 
     if (stops.length) {
       stopsList.innerHTML = stops
         .map((stop, index) => {
           const name = esc(stop.name || "Без названия");
           const meta = esc(stop.category_label || "");
+          const cat = CATEGORY_META[stop.category] ? stop.category : "tourism_view";
           return (
             `<button class="stop" type="button" data-stop="${index}" ` +
             `aria-label="Показать остановку ${index + 1}: ${name}">` +
-            `<span class="stop-num" aria-hidden="true">${index + 1}</span>` +
+            `<span class="stop-thumb" data-thumb="${index}" data-cat="${esc(cat)}" aria-hidden="true">` +
+            `<span class="stop-thumb-fallback">${index + 1}</span>` +
+            `<span class="stop-thumb-badge">${index + 1}</span>` +
+            `</span>` +
             `<span class="stop-info"><span class="stop-name">${name}</span>` +
-            `<span class="stop-meta">${meta}</span></span>` +
+            `<span class="stop-meta">${meta}</span>` +
+            `<span class="stop-credit" data-credit="${index}" hidden></span></span>` +
             `<span class="stop-go" aria-hidden="true">` +
             `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
             `stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>` +
@@ -937,6 +1029,41 @@
         throw new Error("Не удалось связаться с сервером.");
       }
       throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function fetchPlaceImage(place) {
+    if (!place) return null;
+    const lat = Number(place.lat);
+    const lon = Number(place.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+    const key = `${lat.toFixed(4)},${lon.toFixed(4)},${String(place.name || "").toLowerCase()}`;
+    if (placeImageCache.has(key)) return placeImageCache.get(key);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    const params = new URLSearchParams({
+      name: place.name || "",
+      lat: String(lat),
+      lon: String(lon),
+    });
+
+    try {
+      const response = await fetch(`/api/place-image?${params.toString()}`, {
+        credentials: "same-origin",
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("image request failed");
+      const data = await response.json();
+      const image = data && data.image ? data.image : null;
+      placeImageCache.set(key, image);
+      return image;
+    } catch (_error) {
+      placeImageCache.set(key, null);
+      return null;
     } finally {
       clearTimeout(timer);
     }
@@ -1258,90 +1385,6 @@
     }
   }
 
-  function setLocateBusy(busy) {
-    [locateBtn, locateCardBtn].forEach((button) => {
-      if (!button) return;
-      button.disabled = busy;
-      button.classList.toggle("is-loading", busy);
-    });
-  }
-
-  function locateUser() {
-    if (!window.isSecureContext) {
-      if (geoHint) geoHint.hidden = false;
-      showToast(
-        "Геолокация на телефоне работает только по HTTPS или на localhost. Сейчас страница открыта по HTTP.",
-        "error"
-      );
-      return;
-    }
-
-    if (!("geolocation" in navigator)) {
-      showToast("Геолокация не поддерживается этим браузером.", "error");
-      return;
-    }
-
-    setLocateBusy(true);
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocateBusy(false);
-
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-        const accuracy = Math.max(25, Number(position.coords.accuracy) || 60);
-
-        if (locationLayer) {
-          map.removeLayer(locationLayer);
-          locationLayer = null;
-        }
-        locationLayer = L.layerGroup().addTo(map);
-        const accent = cssVar("--accent", "#2563eb");
-
-        L.circle([lat, lon], {
-          pane: "placePane",
-          radius: Math.min(accuracy, 400),
-          color: accent,
-          weight: 1,
-          fillColor: accent,
-          fillOpacity: 0.12,
-          interactive: false,
-        }).addTo(locationLayer);
-
-        const dot = L.circleMarker([lat, lon], {
-          pane: "placePane",
-          radius: 7,
-          color: "#ffffff",
-          weight: 2.5,
-          fillColor: accent,
-          fillOpacity: 1,
-          interactive: false,
-        })
-          .bindPopup("Вы здесь")
-          .addTo(locationLayer);
-
-        map.flyTo([lat, lon], Math.max(map.getZoom(), 16), { duration: 0.7 });
-        setTimeout(() => dot.openPopup(), 450);
-        if (isMobile()) setSheet(false);
-        showToast("Вы на карте. Кликните по ней, чтобы поставить точку маршрута.", "success");
-      },
-      (error) => {
-        setLocateBusy(false);
-        let message = "Не удалось определить местоположение.";
-        if (error && error.code === 1) {
-          message =
-            "Доступ к геолокации запрещён. Разрешите его в настройках браузера для этого сайта.";
-        } else if (error && error.code === 2) {
-          message = "Геолокация недоступна. Проверьте, включён ли GPS и интернет.";
-        } else if (error && error.code === 3) {
-          message = "Геолокация заняла слишком много времени. Попробуйте ещё раз.";
-        }
-        showToast(message, "error");
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
-    );
-  }
-
   // ------------------------------------------------------------
   // События
   // ------------------------------------------------------------
@@ -1400,8 +1443,6 @@
   routeBtn.addEventListener("click", () => doRoute());
   retryLive.addEventListener("click", () => doSearch({ forceLive: true, fit: false }));
 
-  locateBtn.addEventListener("click", locateUser);
-  locateCardBtn.addEventListener("click", locateUser);
   themeBtn.addEventListener("click", () => {
     applyTheme(currentTheme === "dark" ? "light" : "dark");
   });
@@ -1456,13 +1497,6 @@
   restoreSettings();
 
   sliderControls.forEach(setupSliderControl);
-
-  if (!window.isSecureContext) {
-    if (geoHint) geoHint.hidden = false;
-  } else if (!("geolocation" in navigator) && geoHint) {
-    geoHint.textContent = "Этот браузер не поддерживает геолокацию.";
-    geoHint.hidden = false;
-  }
 
   applyTheme(currentTheme, { persist: false });
   renderPoints();

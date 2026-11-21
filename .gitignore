@@ -1,9 +1,9 @@
 # macOS / OS
 .DS_Store
 
-# Secrets / local TLS certificates
+# Local settings
 .env
-certs/
+loop.log
 
 # Python
 __pycache__/

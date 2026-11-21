@@ -189,15 +189,62 @@ class LoopTestCase(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
-    def test_index_uses_osm_and_allows_geolocation(self):
+    def test_index_uses_osm_tiles(self):
         page = self.client.get("/")
         self.assertEqual(page.status_code, 200)
-        self.assertEqual(page.headers.get("Permissions-Policy"), "geolocation=(self)")
 
         script = self.client.get("/static/js/app.js")
         self.assertEqual(script.status_code, 200)
         self.assertIn(b"tile.openstreetmap.org", script.data)
         self.assertNotIn(b"cartocdn", script.data)
+
+    def test_place_image_endpoint(self):
+        fake_image = {
+            "url": "https://upload.wikimedia.org/wikipedia/commons/thumb/test.jpg",
+            "page_url": "https://commons.wikimedia.org/wiki/File:test.jpg",
+            "title": "test.jpg",
+            "source": "Wikimedia Commons",
+            "artist": "Test Author",
+            "license": "CC BY-SA 4.0",
+        }
+        with patch.object(app, "get_place_image", return_value=fake_image) as mocked:
+            response = self.client.get(
+                "/api/place-image?name=Музей&lat=51.5336&lon=46.0343"
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["image"], fake_image)
+        mocked.assert_called_once()
+        args = mocked.call_args.args
+        self.assertEqual(args[0], "Музей")
+        self.assertAlmostEqual(args[1], 51.5336)
+        self.assertAlmostEqual(args[2], 46.0343)
+
+    def test_place_image_urls_are_restricted_to_wikimedia(self):
+        self.assertTrue(
+            app._is_safe_https_url(
+                "https://upload.wikimedia.org/wikipedia/commons/test.jpg",
+                app._IMAGE_HOSTS,
+            )
+        )
+        self.assertTrue(
+            app._is_safe_https_url(
+                "https://thumb.wikimedia.org/wikipedia/commons/thumb/test.jpg",
+                app._IMAGE_HOSTS,
+            )
+        )
+        self.assertFalse(
+            app._is_safe_https_url(
+                "http://upload.wikimedia.org/wikipedia/commons/test.jpg",
+                app._IMAGE_HOSTS,
+            )
+        )
+        self.assertFalse(
+            app._is_safe_https_url(
+                "https://evil.example/test.jpg",
+                app._IMAGE_HOSTS,
+            )
+        )
 
 
 if __name__ == "__main__":

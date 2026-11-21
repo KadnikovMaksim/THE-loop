@@ -12,16 +12,16 @@ THE-loop — пешие прогулки через интересные мес�
     MAX_BBOX_DIAGONAL_KM — максимальная диагональ области поиска, км (150)
     HOST                 — адрес, по умолчанию 127.0.0.1
     PORT                 — порт, по умолчанию 5000
-    SSL_CERT             — путь к сертификату для HTTPS (нужно для геолокации на телефоне)
-    SSL_KEY              — путь к ключу сертификата
     FLASK_DEBUG          — 1/true для режима отладки (по умолчанию выключен)
 """
 
 from __future__ import annotations
 
+import html as html_lib
 import json
 import math
 import os
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -127,6 +127,22 @@ ROUTING_TIMEOUT = float(os.getenv("ROUTING_TIMEOUT", "12"))
 ROUTING_TOTAL_BUDGET = max(20.0, ROUTING_TIMEOUT * 2.0)
 # OSRM-серверы ограничивают число точек в одном запросе; длинный маршрут режем на куски.
 ROUTE_MAX_WAYPOINTS = 25
+
+# --- ФОТОГРАФИИ ДОСТОПРИМЕЧАТЕЛЬНОСТЕЙ ---
+# Wikimedia Commons / Wikipedia не требуют ключа и отдают свободные лицензии.
+WIKIMEDIA_TIMEOUT = float(os.getenv("WIKIMEDIA_TIMEOUT", "6"))
+WIKIMEDIA_USER_AGENT = f"{APP_NAME}/2.0 (local walking-route demo)"
+IMAGE_CACHE_TTL = 24 * 60 * 60
+IMAGE_NEGATIVE_TTL = 60 * 60
+IMAGE_CACHE_MAX = 400
+_image_cache_lock = threading.Lock()
+_image_cache: dict[tuple, dict] = {}
+_IMAGE_HOSTS = {"upload.wikimedia.org", "thumb.wikimedia.org"}
+_PAGE_HOSTS = {"commons.wikimedia.org", "ru.wikipedia.org", "en.wikipedia.org"}
+_BAD_IMAGE_WORDS = (
+    "map", "plan", "diagram", "scheme", "logo", "icon", "flag",
+    "coat of arms", "symbol", "drawing", "chart", "locator",
+)
 WALK_SPEED_KMH = 4.5  # Средняя скорость пешей прогулки для запасного расчёта
 # Защита от гигантских запросов: пеший маршрут на 150+ км бессмысленен,
 # а Overpass на такой прямоугольник может отвечать очень долго.
@@ -1038,6 +1054,263 @@ def fetch_places_in_bbox(
     return places, source, meta
 
 
+# --- 2b. ФОТОГРАФИИ ИЗ WIKIMEDIA ---
+
+def _strip_html(value) -> str:
+    text = html_lib.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_safe_https_url(value, hosts: set[str]) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    return parsed.scheme == "https" and parsed.hostname in hosts
+
+
+def _optional_coordinate(value, minimum: float, maximum: float) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or not (minimum <= number <= maximum):
+        return None
+    return number
+
+
+def _wikimedia_api(host: str, params: dict) -> dict:
+    response = requests.get(
+        f"https://{host}/w/api.php",
+        params={**params, "format": "json", "formatversion": "2"},
+        headers={
+            "User-Agent": WIKIMEDIA_USER_AGENT,
+            "Accept": "application/json",
+        },
+        timeout=(3.5, WIKIMEDIA_TIMEOUT),
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data if isinstance(data, dict) else {}
+
+
+def _image_from_commons_page(page: dict) -> dict | None:
+    infos = page.get("imageinfo") or []
+    if not isinstance(infos, list) or not infos:
+        return None
+    info = infos[0]
+    if not isinstance(info, dict):
+        return None
+
+    mime = str(info.get("mime") or "")
+    if mime not in {"image/jpeg", "image/png", "image/webp"}:
+        return None
+
+    try:
+        width = int(info.get("width") or 0)
+        height = int(info.get("height") or 0)
+    except (TypeError, ValueError):
+        width = height = 0
+    if width < 400 or height < 240:
+        return None
+
+    title = str(page.get("title") or "")
+    title_lower = title.casefold()
+    if any(word in title_lower for word in _BAD_IMAGE_WORDS):
+        return None
+
+    image_url = info.get("thumburl") or info.get("url")
+    if not _is_safe_https_url(image_url, _IMAGE_HOSTS):
+        return None
+
+    page_url = info.get("descriptionurl") or page.get("descriptionurl")
+    if not _is_safe_https_url(page_url, _PAGE_HOSTS):
+        page_url = None
+
+    ext = info.get("extmetadata") if isinstance(info.get("extmetadata"), dict) else {}
+
+    def meta(name: str) -> str:
+        item = ext.get(name)
+        return _strip_html(item.get("value")) if isinstance(item, dict) else ""
+
+    return {
+        "url": image_url,
+        "page_url": page_url,
+        "title": title.removeprefix("File:")[:200],
+        "source": "Wikimedia Commons",
+        "artist": meta("Artist")[:140],
+        "license": meta("LicenseShortName")[:80],
+    }
+
+
+def _pages_from_response(data: dict) -> list[dict]:
+    query = data.get("query") if isinstance(data.get("query"), dict) else {}
+    pages = query.get("pages") or []
+    if isinstance(pages, dict):
+        pages = list(pages.values())
+    return [page for page in pages if isinstance(page, dict)]
+
+
+def _commons_geosearch(lat: float, lon: float) -> dict | None:
+    data = _wikimedia_api(
+        "commons.wikimedia.org",
+        {
+            "action": "query",
+            "generator": "geosearch",
+            "ggscoord": f"{lat}|{lon}",
+            "ggsradius": "250",
+            "ggslimit": "15",
+            "ggsnamespace": "6",
+            "prop": "imageinfo",
+            "iiprop": "url|mime|size|extmetadata",
+            "iiurlwidth": "480",
+            "iiextmetadatafilter": "Artist|LicenseShortName",
+        },
+    )
+    pages = _pages_from_response(data)
+    pages.sort(
+        key=lambda page: page.get("dist")
+        if isinstance(page.get("dist"), (int, float))
+        else 1e9
+    )
+    for page in pages:
+        image = _image_from_commons_page(page)
+        if image:
+            return image
+    return None
+
+
+def _commons_name_search(name: str) -> dict | None:
+    if len(name.strip()) < 4:
+        return None
+    data = _wikimedia_api(
+        "commons.wikimedia.org",
+        {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": f"{name} filetype:bitmap",
+            "gsrnamespace": "6",
+            "gsrlimit": "8",
+            "prop": "imageinfo",
+            "iiprop": "url|mime|size|extmetadata",
+            "iiurlwidth": "480",
+            "iiextmetadatafilter": "Artist|LicenseShortName",
+        },
+    )
+    for page in _pages_from_response(data):
+        image = _image_from_commons_page(page)
+        if image:
+            return image
+    return None
+
+
+def _wikipedia_search(name: str) -> dict | None:
+    if len(name.strip()) < 4:
+        return None
+
+    data = _wikimedia_api(
+        "ru.wikipedia.org",
+        {
+            "action": "query",
+            "generator": "search",
+            "gsrsearch": name,
+            "gsrnamespace": "0",
+            "gsrlimit": "3",
+            "prop": "pageimages|info|pageprops",
+            "piprop": "thumbnail|name",
+            "pithumbsize": "480",
+            "pilicense": "free",
+            "inprop": "url",
+            "redirects": "1",
+        },
+    )
+
+    tokens = [token for token in re.split(r"[^\w]+", name.casefold()) if len(token) >= 3]
+    for page in _pages_from_response(data):
+        props = page.get("pageprops")
+        if isinstance(props, dict) and "disambiguation" in props:
+            continue
+
+        title = str(page.get("title") or "")
+        if tokens and not any(token in title.casefold() for token in tokens):
+            continue
+
+        thumbnail = page.get("thumbnail") if isinstance(page.get("thumbnail"), dict) else {}
+        image_url = thumbnail.get("source")
+        if not _is_safe_https_url(image_url, _IMAGE_HOSTS):
+            continue
+
+        page_url = page.get("fullurl")
+        if not _is_safe_https_url(page_url, _PAGE_HOSTS):
+            page_url = None
+
+        return {
+            "url": image_url,
+            "page_url": page_url,
+            "title": title[:200],
+            "source": "Wikipedia",
+            "artist": "",
+            "license": "",
+        }
+    return None
+
+
+def _image_cache_get(key: tuple) -> tuple[bool, dict | None]:
+    with _image_cache_lock:
+        entry = _image_cache.get(key)
+        if not entry:
+            return False, None
+        ttl = IMAGE_CACHE_TTL if entry["image"] else IMAGE_NEGATIVE_TTL
+        if time.monotonic() - entry["ts"] > ttl:
+            _image_cache.pop(key, None)
+            return False, None
+        return True, entry["image"]
+
+
+def _image_cache_put(key: tuple, image: dict | None) -> None:
+    with _image_cache_lock:
+        if len(_image_cache) >= IMAGE_CACHE_MAX:
+            oldest = min(_image_cache.items(), key=lambda item: item[1]["ts"])[0]
+            _image_cache.pop(oldest, None)
+        _image_cache[key] = {"ts": time.monotonic(), "image": image}
+
+
+def get_place_image(name: str, lat: float | None, lon: float | None) -> dict | None:
+    name = (name or "").strip()[:300]
+    key = (
+        round(lat, 4) if lat is not None else None,
+        round(lon, 4) if lon is not None else None,
+        name.casefold(),
+    )
+    cached, image = _image_cache_get(key)
+    if cached:
+        return image
+
+    result = None
+    if lat is not None and lon is not None:
+        try:
+            result = _commons_geosearch(lat, lon)
+        except Exception as exc:
+            print(f"Wikimedia geosearch error: {exc}")
+
+    if not result and name:
+        try:
+            result = _wikipedia_search(name)
+        except Exception as exc:
+            print(f"Wikipedia image error: {exc}")
+
+    if not result and name:
+        try:
+            result = _commons_name_search(name)
+        except Exception as exc:
+            print(f"Wikimedia search error: {exc}")
+
+    _image_cache_put(key, result)
+    return result
+
+
 # --- 3. РОУТЫ FLASK ---
 
 @app.before_request
@@ -1070,11 +1343,11 @@ def _security_headers(response):
         "script-src 'self'; "
         "style-src 'self'; "
         "img-src 'self' data: https://*.tile.openstreetmap.org "
-        "https://tile.openstreetmap.org; "
+        "https://tile.openstreetmap.org https://upload.wikimedia.org "
+        "https://thumb.wikimedia.org; "
         "connect-src 'self'; font-src 'self' data:; object-src 'none'; "
         "frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
     )
-    response.headers.setdefault("Permissions-Policy", "geolocation=(self)")
     if request.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-store"
     return response
@@ -1234,6 +1507,26 @@ def search_places():
     })
 
 
+@app.route("/api/place-image", methods=["GET"])
+def place_image():
+    name = (request.args.get("name") or "").strip()[:300]
+    lat = _optional_coordinate(request.args.get("lat"), -90, 90)
+    lon = _optional_coordinate(request.args.get("lon"), -180, 180)
+
+    if lat is None or lon is None:
+        lat = lon = None
+    if not name and lat is None:
+        return jsonify({"image": None})
+
+    try:
+        image = get_place_image(name, lat, lon)
+    except Exception as exc:
+        app.logger.warning("Не удалось получить фото места: %s", exc)
+        image = None
+
+    return jsonify({"image": image})
+
+
 @app.route("/api/build-route", methods=["POST"])
 def build_route():
     global current_bbox, found_places, last_route_data
@@ -1341,28 +1634,10 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", "5000"))
     debug = os.getenv("FLASK_DEBUG", "").lower() in {"1", "true", "yes", "on"}
 
-    ssl_cert = os.getenv("SSL_CERT", "").strip()
-    ssl_key = os.getenv("SSL_KEY", "").strip()
-    ssl_context = None
-    if ssl_cert or ssl_key:
-        cert_path = Path(ssl_cert)
-        key_path = Path(ssl_key)
-        if not cert_path.is_absolute():
-            cert_path = BASE_DIR / cert_path
-        if not key_path.is_absolute():
-            key_path = BASE_DIR / key_path
-        if not ssl_cert or not ssl_key or not cert_path.is_file() or not key_path.is_file():
-            print(
-                "\nДля HTTPS нужны оба файла: SSL_CERT и SSL_KEY.\n"
-                "Пример: SSL_CERT=certs/cert.pem SSL_KEY=certs/key.pem python app.py\n"
-            )
-            raise SystemExit(1)
-        ssl_context = (str(cert_path), str(key_path))
-
     # debug=True по умолчанию опасен: интерактивный отладчик позволяет
     # выполнять код на сервере при доступе извне.
     try:
-        app.run(host=host, port=port, debug=debug, threaded=True, ssl_context=ssl_context)
+        app.run(host=host, port=port, debug=debug, threaded=True)
     except OSError as exc:
         print(
             f"\nНе удалось запустить сервер на {host}:{port}: {exc}\n"
