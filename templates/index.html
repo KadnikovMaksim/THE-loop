@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Точки A и B, прямоугольник и места на карте</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; display: flex; height: 100vh; }
+    #panel { width: 340px; padding: 14px; background: #f5f6f8; border-right: 1px solid #ddd; overflow-y: auto; }
+    #map { flex: 1; }
+    button {
+      width: 100%; padding: 9px; margin-top: 8px;
+      background: #2563eb; color: #fff; border: none;
+      border-radius: 5px; cursor: pointer; font-size: 14px;
+    }
+    button:hover { background: #1d4ed8; }
+    .box {
+      background: #fff; padding: 10px; margin-top: 10px;
+      border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px;
+    }
+    .slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    input[type="range"] { width: 100%; cursor: pointer; }
+    .info { font-size: 13px; color: #334155; margin-top: 8px; }
+    .cats { font-size: 12px; color: #475569; line-height: 1.45; }
+    .place-item {
+      background: #fff; padding: 7px 9px; margin-top: 6px;
+      border-radius: 5px; border: 1px solid #e2e8f0; font-size: 13px; cursor: pointer;
+    }
+    .place-item:hover { border-color: #2563eb; }
+  </style>
+</head>
+<body>
+  <div id="panel">
+    <h3 style="margin-top: 0;">Поиск мест между А и Б</h3>
+    <p style="font-size: 13px; color: #475569; margin: 0 0 8px;">
+      1. Кликни по карте — <b>Точка A</b>.<br>
+      2. Кликни ещё раз — <b>Точка B</b>.<br>
+      3. Ползунком уменьши или увеличь отступ прямоугольника (BBox).
+    </p>
+
+    <div class="box">
+      <div class="slider-row">
+        <label for="padSlider"><b>Отступ BBox (уменьшение/расширение):</b></label>
+        <span id="padValue">0.020</span>
+      </div>
+      <input
+        id="padSlider"
+        type="range"
+        min="0.001"
+        max="0.050"
+        step="0.001"
+        value="0.020"
+        oninput="onPadChange()"
+      />
+      <div style="display:flex; justify-content:space-between; font-size:11px; color:#64748b;">
+        <span>Уже (0.001)</span>
+        <span>Шире (0.050)</span>
+      </div>
+    </div>
+
+    <button onclick="searchInBbox()">Найти и показать места</button>
+    <div id="status" class="info"></div>
+
+    <div class="box cats">
+      <b>Категории из запроса Overpass:</b><br>
+      • Арт-объекты (<code>artwork</code>, <code>artwork_type</code>)<br>
+      • Туризм (<code>attraction</code>, <code>museum</code>, <code>viewpoint</code>, <code>gallery</code>)<br>
+      • Исторические места (<code>historic</code>)<br>
+      • Парки и сады (<code>park</code>, <code>garden</code>)<br>
+      • Городские и культурные (<code>fountain</code>, <code>theatre</code>, <code>arts_centre</code>, <code>library</code>, <code>planetarium</code>, <code>clock</code>)<br>
+      • Храмы и культовые места (<code>place_of_worship</code>, <code>church</code>, <code>cathedral</code>, <code>mosque</code>, <code>synagogue</code>, <code>chapel</code>)
+    </div>
+
+    <div id="places-list"></div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const map = L.map("map").setView([51.5074, -0.1278], 13);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+
+    let currentPointA = null;
+    let currentPointB = null;
+    let markerA = null;
+    let markerB = null;
+    let rectLayer = null;
+    let placeMarkers = [];
+
+    function getPad() {
+      return parseFloat(document.getElementById("padSlider").value);
+    }
+
+    function computePreviewBbox(ptA, ptB, pad) {
+      return {
+        south: Math.min(ptA.lat, ptB.lat) - pad,
+        west: Math.min(ptA.lon, ptB.lon) - pad,
+        north: Math.max(ptA.lat, ptB.lat) + pad,
+        east: Math.max(ptA.lon, ptB.lon) + pad
+      };
+    }
+
+    function drawRectangle(bbox, fitMap = false) {
+      if (rectLayer) {
+        map.removeLayer(rectLayer);
+        rectLayer = null;
+      }
+      if (!bbox) return;
+
+      const bounds = [
+        [bbox.south, bbox.west],
+        [bbox.north, bbox.east]
+      ];
+      rectLayer = L.rectangle(bounds, {
+        color: "#2563eb",
+        weight: 2,
+        fillOpacity: 0.08
+      }).addTo(map);
+
+      if (fitMap) {
+        map.fitBounds(bounds, { padding: [25, 25] });
+      }
+    }
+
+    function clearPlaceMarkers() {
+      placeMarkers.forEach(m => map.removeLayer(m));
+      placeMarkers = [];
+      document.getElementById("places-list").innerHTML = "";
+    }
+
+    function renderPoints(data) {
+      currentPointA = data.point_a || null;
+      currentPointB = data.point_b || null;
+
+      if (markerA) { map.removeLayer(markerA); markerA = null; }
+      if (markerB) { map.removeLayer(markerB); markerB = null; }
+
+      if (currentPointA) {
+        markerA = L.marker([currentPointA.lat, currentPointA.lon])
+          .addTo(map).bindPopup("Точка A").openPopup();
+      }
+      if (currentPointB) {
+        markerB = L.marker([currentPointB.lat, currentPointB.lon])
+          .addTo(map).bindPopup("Точка B").openPopup();
+      }
+
+      if (currentPointA && currentPointB) {
+        drawRectangle(computePreviewBbox(currentPointA, currentPointB, getPad()), false);
+      } else if (rectLayer) {
+        map.removeLayer(rectLayer);
+        rectLayer = null;
+      }
+    }
+
+    function onPadChange() {
+      const pad = getPad();
+      document.getElementById("padValue").innerText = pad.toFixed(3);
+
+      // Сразу обновляем прямоугольник на карте при движении ползунка
+      if (currentPointA && currentPointB) {
+        drawRectangle(computePreviewBbox(currentPointA, currentPointB, pad), false);
+      }
+    }
+
+    function renderPlaces(places) {
+      clearPlaceMarkers();
+      const listEl = document.getElementById("places-list");
+
+      listEl.innerHTML = (places || []).map((p, idx) => {
+        const dot = L.circleMarker([p.lat, p.lon], {
+          radius: 6,
+          color: "#dc2626",
+          fillColor: "#f87171",
+          fillOpacity: 0.9
+        }).addTo(map).bindPopup(`<b>${idx + 1}. ${p.name}</b>`);
+
+        placeMarkers.push(dot);
+
+        return `
+          <div class="place-item" onclick="focusPlace(${p.lat}, ${p.lon}, ${idx})">
+            <b>${idx + 1}. ${p.name}</b><br>
+            <span style="color:#64748b;font-size:11px;">${p.lat.toFixed(4)}, ${p.lon.toFixed(4)}</span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function focusPlace(lat, lon, idx) {
+      map.setView([lat, lon], 16);
+      if (placeMarkers[idx]) {
+        placeMarkers[idx].openPopup();
+      }
+    }
+
+    map.on("click", async function (e) {
+      clearPlaceMarkers();
+      document.getElementById("status").innerText = "";
+
+      const res = await fetch("/api/points", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat: e.latlng.lat, lon: e.latlng.lng })
+      });
+      const data = await res.json();
+      renderPoints(data);
+    });
+
+    async function searchInBbox() {
+      const pad = getPad();
+      document.getElementById("status").innerText = `Ищем места (pad = ${pad.toFixed(3)})...`;
+
+      const res = await fetch("/api/search-places", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pad: pad })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        document.getElementById("status").innerText = data.error || "Ошибка";
+        return;
+      }
+
+      document.getElementById("status").innerText = `Найдено мест: ${data.count} (pad: ${pad.toFixed(3)})`;
+      drawRectangle(data.bbox, true);
+      renderPlaces(data.places);
+    }
+
+    fetch("/api/points")
+      .then(r => r.json())
+      .then(data => {
+        renderPoints(data);
+        if (data.bbox) drawRectangle(data.bbox, false);
+        if (data.places) renderPlaces(data.places);
+      });
+  </script>
+</body>
+</html>
