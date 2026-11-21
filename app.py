@@ -1,3 +1,4 @@
+# aboba!!!!!!!
 import requests
 from flask import Flask, jsonify, render_template, request
 
@@ -37,7 +38,9 @@ def build_bbox(pt_a: dict, pt_b: dict, pad: float = 0.02) -> dict:
     }
 
 
-def fetch_places_in_bbox(south: float, west: float, north: float, east: float) -> list[dict]:
+def fetch_places_in_bbox(
+    south: float, west: float, north: float, east: float
+) -> list[dict]:
     """Отправляет запрос в Overpass по прямоугольнику и возвращает список мест с координатами."""
     box = f"{south},{west},{north},{east}"
 
@@ -81,12 +84,14 @@ def fetch_places_in_bbox(south: float, west: float, north: float, east: float) -
         if lat is None or lon is None:
             continue
 
-        places.append({
-            "id": el.get("id"),
-            "name": name,
-            "lat": float(lat),
-            "lon": float(lon),
-        })
+        places.append(
+            {
+                "id": el.get("id"),
+                "name": name,
+                "lat": float(lat),
+                "lon": float(lon),
+            }
+        )
 
     return places
 
@@ -98,12 +103,14 @@ def index():
 
 @app.route("/api/points", methods=["GET"])
 def get_points():
-    return jsonify({
-        "point_a": point_a,
-        "point_b": point_b,
-        "bbox": current_bbox,
-        "places": found_places,
-    })
+    return jsonify(
+        {
+            "point_a": point_a,
+            "point_b": point_b,
+            "bbox": current_bbox,
+            "places": found_places,
+        }
+    )
 
 
 @app.route("/api/points", methods=["POST"])
@@ -126,10 +133,12 @@ def save_points():
     else:
         point_b = clicked
 
-    return jsonify({
-        "point_a": point_a,
-        "point_b": point_b,
-    })
+    return jsonify(
+        {
+            "point_a": point_a,
+            "point_b": point_b,
+        }
+    )
 
 
 @app.route("/api/search-places", methods=["POST"])
@@ -154,12 +163,15 @@ def search_places():
     except Exception as e:
         return jsonify({"error": f"Ошибка запроса к Overpass: {e}"}), 502
 
-    return jsonify({
-        "bbox": current_bbox,
-        "count": len(found_places),
-        "places": found_places,
-    })
+    return jsonify(
+        {
+            "bbox": current_bbox,
+            "count": len(found_places),
+            "places": found_places,
+        }
+    )
 
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
