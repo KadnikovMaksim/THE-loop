@@ -1,0 +1,18 @@
+# macOS / OS
+.DS_Store
+
+# Secrets / local TLS certificates
+.env
+certs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# IDE
+.idea/
+.vscode/
+*.iml

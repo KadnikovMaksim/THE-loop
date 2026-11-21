@@ -1,384 +1,359 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <title>Интересный маршрут между A и B</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { margin: 0; font-family: Arial, sans-serif; display: flex; height: 100vh; }
-    #panel { width: 350px; padding: 14px; background: #f5f6f8; border-right: 1px solid #ddd; overflow-y: auto; }
-    #map { flex: 1; }
-    button {
-      width: 100%; padding: 9px; margin-top: 8px;
-      background: #2563eb; color: #fff; border: none;
-      border-radius: 5px; cursor: pointer; font-size: 14px;
-    }
-    button:hover { background: #1d4ed8; }
-    button.route-btn { background: #059669; }
-    button.route-btn:hover { background: #047857; }
-    .box {
-      background: #fff; padding: 10px; margin-top: 10px;
-      border-radius: 6px; border: 1px solid #e2e8f0; font-size: 13px;
-    }
-    .box-header { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-    .mini-btns { display: flex; gap: 6px; }
-    .mini-btn {
-      width: auto; margin-top: 0; padding: 3px 8px;
-      font-size: 11px; background: #e2e8f0; color: #1e293b; border-radius: 4px;
-    }
-    .mini-btn:hover { background: #cbd5e1; }
-    .slider-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    input[type="range"] { width: 100%; cursor: pointer; }
-    .cat-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
-    .cat-item { display: flex; align-items: center; gap: 7px; cursor: pointer; }
-    .info { font-size: 13px; color: #334155; margin-top: 8px; }
-    .stop-item {
-      background: #ecfdf5; padding: 7px 9px; margin-top: 6px;
-      border-radius: 5px; border: 1px solid #a7f3d0; font-size: 13px;
-    }
-  </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f4f6f9" />
+  <meta
+    name="description"
+    content="Loop — пешие маршруты через интересные места. Поставьте точку A и B, выберите категории и получите прогулку с остановками."
+  />
+  <title>Loop — маршрут по интересным местам</title>
+
+  <link
+    rel="icon"
+    href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%232563eb'/%3E%3Cpath d='M9 23c-2.2 0-4-1.8-4-4s1.8-4 4-4h13c2.2 0 4-1.8 4-4s-1.8-4-4-4H11' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3Ccircle cx='9' cy='23' r='2.4' fill='white'/%3E%3Ccircle cx='22' cy='7' r='2.4' fill='white'/%3E%3C/svg%3E"
+  />
+
+  <link rel="stylesheet" href="{{ url_for('static', filename='leaflet/leaflet.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
 </head>
 <body>
-  <div id="panel">
-    <h3 style="margin-top: 0;">Маршрут через достопримечательности</h3>
-    <p style="font-size: 13px; color: #475569; margin: 0 0 8px;">
-      1. Кликни по карте — <b>Точка A</b>.<br>
-      2. Кликни ещё раз — <b>Точка B</b>.<br>
-      3. Выбери категории, BBox и лимит лишнего пути («крюка»).
-    </p>
+  <div class="app">
+    <aside class="sheet" id="sheet" aria-label="Настройки маршрута">
+      <button
+        class="sheet-handle"
+        id="sheetHandle"
+        type="button"
+        aria-expanded="false"
+        aria-controls="sheetBody"
+        title="Развернуть или свернуть панель"
+      >
+        <span class="handle-bar" aria-hidden="true"></span>
+        <span class="sr-only">Развернуть или свернуть панель</span>
+      </button>
 
-    <div class="box">
-      <div class="box-header">
-        <b>Категории:</b>
-        <div class="mini-btns">
-          <button type="button" class="mini-btn" onclick="setAllCategories(true)">Все</button>
-          <button type="button" class="mini-btn" onclick="setAllCategories(false)">Сброс</button>
+      <div class="sheet-head">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <path d="M7 19c-2.2 0-4-1.8-4-4s1.8-4 4-4h10c2.2 0 4-1.8 4-4s-1.8-4-4-4H8" />
+              <circle cx="7" cy="19" r="1.9" fill="currentColor" stroke="none" />
+              <circle cx="17" cy="3" r="1.9" fill="currentColor" stroke="none" />
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">Loop</div>
+            <div class="brand-sub">Пешие маршруты по интересным местам</div>
+          </div>
+        </div>
+        <span class="source-pill" data-source-pill hidden>
+          <span class="source-dot" aria-hidden="true"></span>
+          <span data-source-text></span>
+        </span>
+      </div>
+
+      <div
+        class="peek"
+        id="peek"
+        role="button"
+        tabindex="0"
+        aria-controls="sheetBody"
+        aria-expanded="false"
+        aria-label="Развернуть или свернуть панель настроек"
+      >
+        <div class="peek-main">
+          <div class="peek-title" id="peekTitle">Маршрут по местам</div>
+          <div class="peek-sub" id="peekSub">Тапните по карте — точка A</div>
+        </div>
+        <span class="peek-chevron" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="m18 15-6-6-6 6" />
+          </svg>
+        </span>
+      </div>
+
+      <div class="sheet-body" id="sheetBody">
+        <div class="content">
+          <section class="card" aria-labelledby="pointsTitle">
+            <div class="card-head">
+              <h2 id="pointsTitle">Точки маршрута</h2>
+              <div class="card-tools">
+                <button
+                  class="icon-btn"
+                  id="swapBtn"
+                  type="button"
+                  title="Поменять A и B местами"
+                  aria-label="Поменять A и B местами"
+                  disabled
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M7 4v13" /><path d="m3 13 4 4 4-4" />
+                    <path d="M17 20V7" /><path d="m13 11 4-4 4 4" />
+                  </svg>
+                </button>
+                <button
+                  class="icon-btn"
+                  id="resetBtn"
+                  type="button"
+                  title="Сбросить маршрут"
+                  aria-label="Сбросить маршрут"
+                >
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 3v5h5" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <button class="point-row" id="pointARow" type="button">
+              <span class="point-dot a" aria-hidden="true">A</span>
+              <span class="point-info">
+                <span class="point-label">Точка A</span>
+                <span class="point-value" id="pointAValue">Кликните по карте</span>
+              </span>
+              <span class="point-go" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="7" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+              </span>
+            </button>
+
+            <button class="point-row" id="pointBRow" type="button">
+              <span class="point-dot b" aria-hidden="true">B</span>
+              <span class="point-info">
+                <span class="point-label">Точка B</span>
+                <span class="point-value" id="pointBValue">Кликните по карте</span>
+              </span>
+              <span class="point-go" aria-hidden="true">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="7" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                </svg>
+              </span>
+            </button>
+
+            <p class="hint">Первый клик по карте ставит точку A, второй — B. Следующий клик начнёт новый маршрут.</p>
+
+            <button class="geo-btn" id="locateCardBtn" type="button">
+              <span class="geo-icon" aria-hidden="true">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round">
+                  <circle cx="12" cy="12" r="7" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+                  <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+              <span>Моё местоположение</span>
+            </button>
+            <p class="hint geo-hint" id="geoHint" hidden>
+              На телефоне геолокация работает только по HTTPS. Откройте приложение по адресу
+              <code>https://…</code> и разрешите доступ.
+            </p>
+          </section>
+
+          <section class="card" aria-labelledby="categoriesTitle">
+            <div class="card-head">
+              <h2 id="categoriesTitle">Что посмотреть</h2>
+              <div class="card-tools text-tools">
+                <button class="link-btn" id="catsAll" type="button">Все</button>
+                <button class="link-btn" id="catsNone" type="button">Сброс</button>
+              </div>
+            </div>
+            <div class="chips" id="categories">
+              <label class="chip" data-cat="tourism_view">
+                <input type="checkbox" class="cat-cb" name="category" value="tourism_view" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Достопримечательности</span>
+                <span class="chip-count" data-count="tourism_view" hidden></span>
+              </label>
+              <label class="chip" data-cat="historic">
+                <input type="checkbox" class="cat-cb" name="category" value="historic" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>История</span>
+                <span class="chip-count" data-count="historic" hidden></span>
+              </label>
+              <label class="chip" data-cat="nature">
+                <input type="checkbox" class="cat-cb" name="category" value="nature" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Парки</span>
+                <span class="chip-count" data-count="nature" hidden></span>
+              </label>
+              <label class="chip" data-cat="culture">
+                <input type="checkbox" class="cat-cb" name="category" value="culture" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Музеи</span>
+                <span class="chip-count" data-count="culture" hidden></span>
+              </label>
+              <label class="chip" data-cat="art">
+                <input type="checkbox" class="cat-cb" name="category" value="art" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Искусство</span>
+                <span class="chip-count" data-count="art" hidden></span>
+              </label>
+              <label class="chip" data-cat="urban">
+                <input type="checkbox" class="cat-cb" name="category" value="urban" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Архитектура</span>
+                <span class="chip-count" data-count="urban" hidden></span>
+              </label>
+              <label class="chip" data-cat="worship">
+                <input type="checkbox" class="cat-cb" name="category" value="worship" checked />
+                <span class="chip-dot" aria-hidden="true"></span>
+                <span>Храмы</span>
+                <span class="chip-count" data-count="worship" hidden></span>
+              </label>
+            </div>
+          </section>
+
+          <section class="card" aria-labelledby="settingsTitle">
+            <div class="card-head">
+              <h2 id="settingsTitle">Параметры прогулки</h2>
+            </div>
+
+            <div class="slider">
+              <div class="slider-row">
+                <label class="slider-label" for="padSlider">Отступ области</label>
+                <div class="slider-number">
+                  <input
+                    class="slider-input"
+                    id="padInput"
+                    type="number"
+                    min="0.001"
+                    max="0.05"
+                    step="0.001"
+                    value="0.020"
+                    inputmode="decimal"
+                    aria-label="Отступ области в градусах"
+                    title="От 0.001 до 0.05"
+                  />
+                  <span class="slider-unit" aria-hidden="true">°</span>
+                </div>
+              </div>
+              <input class="range" id="padSlider" type="range" min="0.001" max="0.05" step="0.001" value="0.02" aria-label="Отступ области" />
+            </div>
+
+            <div class="slider">
+              <div class="slider-row">
+                <label class="slider-label" for="detourSlider">Максимальный крюк</label>
+                <div class="slider-number">
+                  <input
+                    class="slider-input"
+                    id="detourInput"
+                    type="number"
+                    min="0.2"
+                    max="5"
+                    step="0.1"
+                    value="1.5"
+                    inputmode="decimal"
+                    aria-label="Максимальный крюк в километрах"
+                    title="От 0.2 до 5 км"
+                  />
+                  <span class="slider-unit" aria-hidden="true">км</span>
+                </div>
+              </div>
+              <input class="range" id="detourSlider" type="range" min="0.2" max="5" step="0.1" value="1.5" aria-label="Максимальный крюк" />
+            </div>
+
+            <div class="slider">
+              <div class="slider-row">
+                <label class="slider-label" for="stopsSlider">Максимум остановок</label>
+                <div class="slider-number">
+                  <input
+                    class="slider-input"
+                    id="stopsInput"
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value="3"
+                    inputmode="numeric"
+                    aria-label="Максимальное количество остановок"
+                    title="От 1 до 100"
+                  />
+                </div>
+              </div>
+              <input class="range" id="stopsSlider" type="range" min="1" max="100" step="1" value="3" aria-label="Максимум остановок" />
+            </div>
+          </section>
+
+          <div class="notice" id="notice" data-type="warn" role="status" aria-live="polite" hidden>
+            <div id="noticeText"></div>
+            <button class="notice-action" id="retryLive" type="button" hidden>Повторить запрос</button>
+          </div>
+
+          <section class="card result-card" id="resultCard" aria-live="polite" hidden>
+            <div class="result-head">
+              <h2>Ваш маршрут</h2>
+              <span class="result-badge" id="resultBadge"></span>
+            </div>
+            <div class="metrics">
+              <div class="metric"><b id="metricDistance">—</b><small>расстояние</small></div>
+              <div class="metric"><b id="metricDuration">—</b><small>в пути</small></div>
+              <div class="metric"><b id="metricStops">—</b><small>остановок</small></div>
+            </div>
+            <div class="stops" id="stopsList"></div>
+            <p class="hint" id="resultNote" hidden></p>
+          </section>
+
+          <footer class="sheet-foot">
+            <span>Данные <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a></span>
+            <span>Маршруты: OSRM</span>
+          </footer>
         </div>
       </div>
-      <div class="cat-list">
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="tourism_view" checked /> Достопримечательности и виды</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="art" checked /> Искусство и галереи</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="culture" checked /> Музеи и культура</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="historic" checked /> История и памятники</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="nature" checked /> Парки и природа</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="urban" checked /> Город и архитектура</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="worship" checked /> Храмы и культовые места</label>
+
+      <div class="actions sheet-actions">
+        <button class="btn btn-ghost" id="searchBtn" type="button">
+          <span class="btn-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" />
+            </svg>
+          </span>
+          <span class="btn-label btn-label-full">Найти места</span>
+          <span class="btn-label btn-label-short">Найти</span>
+        </button>
+        <button class="btn btn-primary" id="routeBtn" type="button">
+          <span class="btn-icon" aria-hidden="true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="19" r="2" /><circle cx="18" cy="5" r="2" />
+              <path d="M8 19h5a4 4 0 0 0 4-4V9a4 4 0 0 0-4-4H8" />
+            </svg>
+          </span>
+          <span class="btn-label btn-label-full">Построить маршрут</span>
+          <span class="btn-label btn-label-short">Маршрут</span>
+        </button>
       </div>
-    </div>
+    </aside>
 
-    <div class="box">
-      <div class="slider-row">
-        <label for="padSlider"><b>Отступ BBox:</b></label>
-        <span id="padValue">0.020</span>
+    <main class="map-wrap">
+      <div id="map" role="application" aria-label="Карта. Нажмите, чтобы поставить точку маршрута."></div>
+
+      <div class="map-hint" id="mapHint" aria-live="polite">
+        <span class="hint-dot" aria-hidden="true"></span>
+        <span id="mapHintText">Кликните по карте — точка A</span>
       </div>
-      <input
-        id="padSlider"
-        type="range"
-        min="0.001"
-        max="0.050"
-        step="0.001"
-        value="0.020"
-        oninput="onPadChange()"
-      />
 
-      <div class="slider-row" style="margin-top: 10px;">
-        <label for="detourSlider"><b>Макс. «крюк» (км):</b></label>
-        <span id="detourValue">1.5</span>
+      <div class="map-fabs">
+        <button class="fab" id="locateBtn" type="button" title="Моё местоположение" aria-label="Моё местоположение">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="7" /><path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+            <circle cx="12" cy="12" r="2" fill="currentColor" stroke="none" />
+          </svg>
+        </button>
+        <button class="fab" id="themeBtn" type="button" title="Переключить тему" aria-label="Переключить тему">
+          <svg class="theme-icon-light" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />
+          </svg>
+          <svg class="theme-icon-dark" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+          </svg>
+        </button>
       </div>
-      <input
-        id="detourSlider"
-        type="range"
-        min="0.2"
-        max="5.0"
-        step="0.1"
-        value="1.5"
-        oninput="document.getElementById('detourValue').innerText = parseFloat(this.value).toFixed(1)"
-      />
-
-      <div class="slider-row" style="margin-top: 10px;">
-        <label for="stopsSlider"><b>Макс. остановок:</b></label>
-        <span id="stopsValue">3</span>
-      </div>
-      <input
-        id="stopsSlider"
-        type="range"
-        min="1"
-        max="100"
-        step="1"
-        value="3"
-        oninput="document.getElementById('stopsValue').innerText = this.value"
-      />
-    </div>
-
-    <button onclick="searchInBbox()">1. Найти места в прямоугольнике</button>
-    <button class="route-btn" onclick="buildInterestingRoute()">2. Построить маршрут через места</button>
-
-    <div id="status" class="info"></div>
-    <div id="route-summary" class="info"></div>
-    <div id="stops-list"></div>
+    </main>
   </div>
 
-  <div id="map"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script>
-    const map = L.map("map").setView([51.533562, 46.034266], 13);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
-
-    function invertMapColors(enabled = true) {
-      const tilePane = map.getPane("tilePane");
-      if (tilePane) {
-        tilePane.style.filter = enabled ? "invert(100%) hue-rotate(180deg)" : "none";
-      }
-    }
-    invertMapColors(true);
-
-    let currentPointA = null;
-    let currentPointB = null;
-    let hasSearchedPlaces = false;
-    let markerA = null;
-    let markerB = null;
-    let rectLayer = null;
-    let placeMarkers = [];
-    let stopMarkers = [];
-    let routeLine = null;
-
-    function getSelectedCategories() {
-      return Array.from(document.querySelectorAll(".cat-cb:checked")).map(cb => cb.value);
-    }
-
-    function onCategoriesChanged() {
-      if (currentPointA && currentPointB && hasSearchedPlaces) {
-        searchInBbox(false);
-      }
-    }
-
-    function setAllCategories(checked) {
-      document.querySelectorAll(".cat-cb").forEach(cb => {
-        cb.checked = checked;
-      });
-      onCategoriesChanged();
-    }
-
-    document.querySelectorAll(".cat-cb").forEach(cb => {
-      cb.addEventListener("change", onCategoriesChanged);
-    });
-
-    function getPad() {
-      return parseFloat(document.getElementById("padSlider").value);
-    }
-
-    function computePreviewBbox(ptA, ptB, pad) {
-      return {
-        south: Math.min(ptA.lat, ptB.lat) - pad,
-        west: Math.min(ptA.lon, ptB.lon) - pad,
-        north: Math.max(ptA.lat, ptB.lat) + pad,
-        east: Math.max(ptA.lon, ptB.lon) + pad
-      };
-    }
-
-    function drawRectangle(bbox, fitMap = false) {
-      if (rectLayer) {
-        map.removeLayer(rectLayer);
-        rectLayer = null;
-      }
-      if (!bbox) return;
-
-      const bounds = [
-        [bbox.south, bbox.west],
-        [bbox.north, bbox.east]
-      ];
-      rectLayer = L.rectangle(bounds, {
-        color: "#2563eb",
-        weight: 2,
-        fillOpacity: 0.06
-      }).addTo(map);
-
-      if (fitMap) {
-        map.fitBounds(bounds, { padding: [25, 25] });
-      }
-    }
-
-    function clearRouteLayers() {
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
-      }
-      stopMarkers.forEach(m => map.removeLayer(m));
-      stopMarkers = [];
-      document.getElementById("route-summary").innerText = "";
-      document.getElementById("stops-list").innerHTML = "";
-    }
-
-    function clearPlaceMarkers() {
-      placeMarkers.forEach(m => map.removeLayer(m));
-      placeMarkers = [];
-    }
-
-    function renderPoints(data) {
-      currentPointA = data.point_a || null;
-      currentPointB = data.point_b || null;
-
-      if (markerA) { map.removeLayer(markerA); markerA = null; }
-      if (markerB) { map.removeLayer(markerB); markerB = null; }
-
-      if (currentPointA) {
-        markerA = L.marker([currentPointA.lat, currentPointA.lon])
-          .addTo(map).bindPopup("Точка A").openPopup();
-      }
-      if (currentPointB) {
-        markerB = L.marker([currentPointB.lat, currentPointB.lon])
-          .addTo(map).bindPopup("Точка B").openPopup();
-      }
-
-      if (currentPointA && currentPointB) {
-        drawRectangle(computePreviewBbox(currentPointA, currentPointB, getPad()), false);
-      } else if (rectLayer) {
-        map.removeLayer(rectLayer);
-        rectLayer = null;
-      }
-    }
-
-    function onPadChange() {
-      const pad = getPad();
-      document.getElementById("padValue").innerText = pad.toFixed(3);
-      if (currentPointA && currentPointB) {
-        drawRectangle(computePreviewBbox(currentPointA, currentPointB, pad), false);
-      }
-    }
-
-    function renderPlaces(places) {
-      clearPlaceMarkers();
-      (places || []).forEach((p) => {
-        const catText = p.category_label ? ` (${p.category_label})` : "";
-        const dot = L.circleMarker([p.lat, p.lon], {
-          radius: 5,
-          color: "#dc2626",
-          fillColor: "#f87171",
-          fillOpacity: 0.8
-        }).addTo(map).bindPopup(`Место: ${p.name}${catText}`);
-        placeMarkers.push(dot);
-      });
-    }
-
-    function renderRoute(routeData) {
-      clearRouteLayers();
-      if (!routeData || !routeData.route) return;
-
-      routeLine = L.polyline(routeData.route.geometry, {
-        color: "#059669",
-        weight: 5
-      }).addTo(map);
-      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-
-      document.getElementById("route-summary").innerHTML =
-        `<b>Маршрут:</b> ~${routeData.route.distance_km} км · ~${routeData.route.duration_min} мин` +
-        (routeData.route.fallback ? " (запасная линия)" : "");
-
-      const stops = routeData.stops || [];
-      document.getElementById("stops-list").innerHTML = stops.map((s, idx) => {
-        const catText = s.category_label ? ` · ${s.category_label}` : "";
-        const m = L.circleMarker([s.lat, s.lon], {
-          radius: 8,
-          color: "#047857",
-          fillColor: "#34d399",
-          fillOpacity: 0.95
-        }).addTo(map).bindPopup(`<b>Остановка ${idx + 1}: ${s.name}</b>${catText}`);
-        stopMarkers.push(m);
-
-        return `
-          <div class="stop-item">
-            <b>${idx + 1}. ${s.name}</b><br>
-            <span style="color:#065f46;font-size:11px;">${s.category_label || s.category || ""} · ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</span>
-          </div>
-        `;
-      }).join("");
-    }
-
-    map.on("click", async function (e) {
-      hasSearchedPlaces = false;
-      clearPlaceMarkers();
-      clearRouteLayers();
-      document.getElementById("status").innerText = "";
-
-      const res = await fetch("/api/points", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lat: e.latlng.lat, lon: e.latlng.lng })
-      });
-      const data = await res.json();
-      renderPoints(data);
-    });
-
-    async function searchInBbox(fitBounds = true) {
-      const pad = getPad();
-      const categories = getSelectedCategories();
-      document.getElementById("status").innerText = "Ищем места в прямоугольнике...";
-      clearRouteLayers();
-
-      const res = await fetch("/api/search-places", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pad: pad, categories: categories })
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        document.getElementById("status").innerText = data.error || "Ошибка";
-        return;
-      }
-
-      hasSearchedPlaces = true;
-      const srcNote = data.source === "local_saratov_geojson" ? " [saratov.geojson]" : "";
-      document.getElementById("status").innerText = `Найдено мест: ${data.count}${srcNote}`;
-      drawRectangle(data.bbox, fitBounds);
-      renderPlaces(data.places);
-    }
-
-    async function buildInterestingRoute() {
-      const pad = getPad();
-      const maxDetourKm = parseFloat(document.getElementById("detourSlider").value);
-      const maxStops = parseInt(document.getElementById("stopsSlider").value, 10);
-      const categories = getSelectedCategories();
-
-      document.getElementById("status").innerText = "Подбираем остановки и строим маршрут...";
-
-      const res = await fetch("/api/build-route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pad: pad,
-          max_detour_km: maxDetourKm,
-          max_stops: maxStops,
-          categories: categories,
-          priority_categories: categories
-        })
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        document.getElementById("status").innerText = data.error || "Ошибка построения маршрута";
-        return;
-      }
-
-      document.getElementById("status").innerText =
-        `Остановок в маршруте: ${(data.stops || []).length} (лимит крюка: ${maxDetourKm} км)`;
-      renderRoute(data);
-    }
-
-    fetch("/api/points")
-      .then(r => r.json())
-      .then(data => {
-        renderPoints(data);
-        if (data.bbox) drawRectangle(data.bbox, false);
-        if (Array.isArray(data.places) && data.places.length > 0) {
-          hasSearchedPlaces = true;
-          renderPlaces(data.places);
-        }
-        if (data.route_result) renderRoute(data.route_result);
-      });
-  </script>
+  <script src="{{ url_for('static', filename='leaflet/leaflet.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 </body>
 </html>
