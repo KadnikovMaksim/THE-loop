@@ -56,12 +56,13 @@
         </div>
       </div>
       <div class="cat-list">
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="attraction" checked /> Достопримечательности и виды</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="art" checked /> Арт-объекты и галереи</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="culture" checked /> Музеи и театры</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="tourism_view" checked /> Достопримечательности и виды</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="art" checked /> Искусство и галереи</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="culture" checked /> Музеи и культура</label>
         <label class="cat-item"><input type="checkbox" class="cat-cb" value="historic" checked /> История и памятники</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="nature" checked /> Парки и сады</label>
-        <label class="cat-item"><input type="checkbox" class="cat-cb" value="worship" checked /> Храмы и соборы</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="nature" checked /> Парки и природа</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="urban" checked /> Город и архитектура</label>
+        <label class="cat-item"><input type="checkbox" class="cat-cb" value="worship" checked /> Храмы и культовые места</label>
       </div>
     </div>
 
@@ -121,7 +122,7 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
-    const map = L.map("map").setView([51.5074, -0.1278], 13);
+    const map = L.map("map").setView([51.533562, 46.034266], 13);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       attribution: "&copy; OpenStreetMap"
     }).addTo(map);
@@ -136,6 +137,7 @@
 
     let currentPointA = null;
     let currentPointB = null;
+    let hasSearchedPlaces = false;
     let markerA = null;
     let markerB = null;
     let rectLayer = null;
@@ -147,11 +149,22 @@
       return Array.from(document.querySelectorAll(".cat-cb:checked")).map(cb => cb.value);
     }
 
+    function onCategoriesChanged() {
+      if (currentPointA && currentPointB && hasSearchedPlaces) {
+        searchInBbox(false);
+      }
+    }
+
     function setAllCategories(checked) {
       document.querySelectorAll(".cat-cb").forEach(cb => {
         cb.checked = checked;
       });
+      onCategoriesChanged();
     }
+
+    document.querySelectorAll(".cat-cb").forEach(cb => {
+      cb.addEventListener("change", onCategoriesChanged);
+    });
 
     function getPad() {
       return parseFloat(document.getElementById("padSlider").value);
@@ -239,12 +252,13 @@
     function renderPlaces(places) {
       clearPlaceMarkers();
       (places || []).forEach((p) => {
+        const catText = p.category_label ? ` (${p.category_label})` : "";
         const dot = L.circleMarker([p.lat, p.lon], {
           radius: 5,
           color: "#dc2626",
           fillColor: "#f87171",
           fillOpacity: 0.8
-        }).addTo(map).bindPopup(`Место: ${p.name}`);
+        }).addTo(map).bindPopup(`Место: ${p.name}${catText}`);
         placeMarkers.push(dot);
       });
     }
@@ -265,24 +279,26 @@
 
       const stops = routeData.stops || [];
       document.getElementById("stops-list").innerHTML = stops.map((s, idx) => {
+        const catText = s.category_label ? ` · ${s.category_label}` : "";
         const m = L.circleMarker([s.lat, s.lon], {
           radius: 8,
           color: "#047857",
           fillColor: "#34d399",
           fillOpacity: 0.95
-        }).addTo(map).bindPopup(`<b>Остановка ${idx + 1}: ${s.name}</b>`);
+        }).addTo(map).bindPopup(`<b>Остановка ${idx + 1}: ${s.name}</b>${catText}`);
         stopMarkers.push(m);
 
         return `
           <div class="stop-item">
             <b>${idx + 1}. ${s.name}</b><br>
-            <span style="color:#065f46;font-size:11px;">${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</span>
+            <span style="color:#065f46;font-size:11px;">${s.category_label || s.category || ""} · ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}</span>
           </div>
         `;
       }).join("");
     }
 
     map.on("click", async function (e) {
+      hasSearchedPlaces = false;
       clearPlaceMarkers();
       clearRouteLayers();
       document.getElementById("status").innerText = "";
@@ -296,7 +312,7 @@
       renderPoints(data);
     });
 
-    async function searchInBbox() {
+    async function searchInBbox(fitBounds = true) {
       const pad = getPad();
       const categories = getSelectedCategories();
       document.getElementById("status").innerText = "Ищем места в прямоугольнике...";
@@ -314,8 +330,10 @@
         return;
       }
 
-      document.getElementById("status").innerText = `Найдено мест: ${data.count}`;
-      drawRectangle(data.bbox, true);
+      hasSearchedPlaces = true;
+      const srcNote = data.source === "local_saratov_geojson" ? " [saratov.geojson]" : "";
+      document.getElementById("status").innerText = `Найдено мест: ${data.count}${srcNote}`;
+      drawRectangle(data.bbox, fitBounds);
       renderPlaces(data.places);
     }
 
@@ -334,7 +352,8 @@
           pad: pad,
           max_detour_km: maxDetourKm,
           max_stops: maxStops,
-          categories: categories
+          categories: categories,
+          priority_categories: categories
         })
       });
       const data = await res.json();
@@ -354,7 +373,10 @@
       .then(data => {
         renderPoints(data);
         if (data.bbox) drawRectangle(data.bbox, false);
-        if (data.places) renderPlaces(data.places);
+        if (Array.isArray(data.places) && data.places.length > 0) {
+          hasSearchedPlaces = true;
+          renderPlaces(data.places);
+        }
         if (data.route_result) renderRoute(data.route_result);
       });
   </script>

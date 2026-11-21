@@ -86,6 +86,9 @@ def build_interesting_route_stops(
     - учитывает приоритетные категории;
     - вставляет каждую выбранную точку в позицию с минимальным приростом длины пути.
     """
+    if max_stops <= 0 or not places:
+        return []
+
     priority_categories = priority_categories or []
     direct_ab = haversine_km(point_a[0], point_a[1], point_b[0], point_b[1])
 
@@ -243,6 +246,37 @@ def detect_place_category(tags: dict) -> str:
     return "tourism_view"
 
 
+def _parse_categories_param(data: dict) -> tuple[list[str], bool]:
+    """
+    Возвращает (список_выбранных_категорий, передан_ли_фильтр_явно).
+    Если ключ 'categories' отсутствует в JSON — фильтр не задан (берём все категории).
+    Если ключ 'categories' передан как [] — пользователь снял все галочки (результат пуст).
+    """
+    if "categories" not in data or data.get("categories") is None:
+        return list(CATEGORY_LABELS.keys()), False
+
+    raw_cats = data.get("categories")
+    if not isinstance(raw_cats, list):
+        return list(CATEGORY_LABELS.keys()), False
+
+    valid = [c for c in raw_cats if c in CATEGORY_LABELS]
+    return valid, True
+
+
+def filter_places_by_categories(
+    places: list[dict],
+    selected_categories: list[str],
+    filter_explicitly_set: bool = True,
+) -> list[dict]:
+    """Фильтрует список мест по выбранным категориям."""
+    if not filter_explicitly_set:
+        return list(places)
+    if not selected_categories:
+        return []
+    allowed = set(selected_categories)
+    return [p for p in places if p.get("category") in allowed]
+
+
 def build_bbox(pt_a: dict, pt_b: dict, pad: float = 0.015) -> dict:
     """Строит прямоугольник (south, west, north, east) вокруг точек A и B с отступом pad."""
     south = min(pt_a["lat"], pt_b["lat"]) - pad
@@ -305,7 +339,6 @@ def _get_saratov_places_from_geojson() -> list[dict]:
     raw = json.loads(SARATOV_GEOJSON_FILE.read_text(encoding="utf-8"))
     parsed: list[dict] = []
 
-    # Поддержка GeoJSON FeatureCollection (как в вашей выгрузке из overpass-turbo)
     if isinstance(raw, dict) and "features" in raw:
         for feat in raw.get("features", []):
             props = feat.get("properties") or {}
@@ -335,7 +368,6 @@ def _get_saratov_places_from_geojson() -> list[dict]:
                 "lon": float(lon),
             })
 
-    # Поддержка сырого JSON ответа Overpass (elements)
     elif isinstance(raw, dict) and "elements" in raw:
         for el in raw.get("elements", []):
             tags = el.get("tags", {})
@@ -356,7 +388,6 @@ def _get_saratov_places_from_geojson() -> list[dict]:
                 "lon": float(lon),
             })
 
-    # Поддержка уже сконвертированного списка объектов
     elif isinstance(raw, list):
         for p in raw:
             if not p.get("name") or p.get("lat") is None or p.get("lon") is None:
@@ -471,6 +502,7 @@ def get_points():
         "bbox": current_bbox,
         "places": found_places,
         "route_result": last_route_data,
+        "categories": CATEGORY_LABELS,
     })
 
 
@@ -513,11 +545,12 @@ def search_places():
 
     data = request.get_json(silent=True) or {}
     pad = float(data.get("pad", 0.015))
+    selected_categories, filter_set = _parse_categories_param(data)
 
     current_bbox = build_bbox(point_a, point_b, pad=pad)
 
     try:
-        found_places, source = fetch_places_in_bbox(
+        all_in_bbox, source = fetch_places_in_bbox(
             current_bbox["south"],
             current_bbox["west"],
             current_bbox["north"],
@@ -526,11 +559,20 @@ def search_places():
     except Exception as e:
         return jsonify({"error": f"Ошибка поиска мест: {e}"}), 502
 
+    found_places = all_in_bbox
+    filtered_places = filter_places_by_categories(
+        all_in_bbox,
+        selected_categories=selected_categories,
+        filter_explicitly_set=filter_set,
+    )
+
     return jsonify({
         "bbox": current_bbox,
         "source": source,
-        "count": len(found_places),
-        "places": found_places,
+        "total_in_bbox": len(all_in_bbox),
+        "count": len(filtered_places),
+        "categories": selected_categories,
+        "places": filtered_places,
     })
 
 
@@ -545,7 +587,8 @@ def build_route():
     pad = float(data.get("pad", 0.015))
     max_detour_km = float(data.get("max_detour_km", 0.8))
     max_stops = int(data.get("max_stops", 3))
-    priority_categories = data.get("priority_categories") or []
+    selected_categories, filter_set = _parse_categories_param(data)
+    priority_categories = data.get("priority_categories") or selected_categories
 
     source = "cached_in_memory"
     if not found_places:
@@ -560,10 +603,16 @@ def build_route():
         except Exception as e:
             return jsonify({"error": f"Ошибка поиска мест: {e}"}), 502
 
+    filtered_places = filter_places_by_categories(
+        found_places,
+        selected_categories=selected_categories,
+        filter_explicitly_set=filter_set,
+    )
+
     stops = build_interesting_route_stops(
         point_a=(point_a["lat"], point_a["lon"]),
         point_b=(point_b["lat"], point_b["lon"]),
-        places=found_places,
+        places=filtered_places,
         priority_categories=priority_categories,
         max_stops=max_stops,
         max_detour_km=max_detour_km,
@@ -580,6 +629,7 @@ def build_route():
         "stops": stops,
         "route": route_geom,
         "source": source,
+        "categories": selected_categories,
         "max_detour_km": max_detour_km,
         "max_stops": max_stops,
     }
